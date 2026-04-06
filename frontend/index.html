@@ -293,8 +293,28 @@ canvas{display:block;}
         </div>
       </div>
 
-      <div class="field-group"><label>Depart</label><input type="date" id="depdate" value="2026-04-15"></div>
-      <div class="field-group"><label>Return</label><input type="date" id="retdate" value="2026-04-25"></div>
+      <div class="field-group">
+  <label>Trip Type</label>
+  <select id="tripType" onchange="handleTripTypeChange()">
+    <option value="oneway">One Way</option>
+    <option value="roundtrip">Round Trip</option>
+    <option value="multi">Multi City</option>
+  </select>
+</div>
+<div class="field-group" id="departGroup">
+  <label>Depart</label>
+  <input type="date" id="depdate" value="2026-04-15">
+</div>
+
+<div class="field-group" id="returnGroup" style="display:none;">
+  <label>Return</label>
+  <input type="date" id="retdate" value="2026-04-25">
+</div>
+
+<div class="field-group" id="multiSecondDepartGroup" style="display:none;">
+  <label>2nd Depart</label>
+  <input type="date" id="multiDepdate2" value="2026-04-25">
+</div>
       <div class="field-group">
         <label>Class</label>
         <select id="cabin">
@@ -688,6 +708,15 @@ function switchView(name,btn){
   if(name==='analytics')renderAnalytics();
 }
 
+function handleTripTypeChange() {
+  const tripType = document.getElementById('tripType').value;
+  const returnGroup = document.getElementById('returnGroup');
+  const multiSecondDepartGroup = document.getElementById('multiSecondDepartGroup');
+
+  returnGroup.style.display = tripType === 'roundtrip' ? '' : 'none';
+  multiSecondDepartGroup.style.display = tripType === 'multi' ? '' : 'none';
+}
+
 function fmtDur(m){if(typeof m!=='number'||isNaN(m)||m<=0)return'—';return`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;}
 function parseDur(v){if(typeof v==='number')return v;const s=String(v||'').trim();if(/^\d+$/.test(s))return +s;const hm=s.match(/(\d+)\s*h\s*(\d+)?\s*m?/i);if(hm)return +hm[1]*60+(+hm[2]||0);const iso=s.match(/PT(?:(\d+)H)?(?:(\d+)M)?/i);if(iso)return +(iso[1]||0)*60+(+iso[2]||0);return 0;}
 function xTime(v){if(!v)return'--:--';const d=new Date(String(v).replace(' ','T'));if(isNaN(d))return String(v).slice(11,16)||v;return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
@@ -812,72 +841,89 @@ function recalcScores(){
 }
 
 async function startSearch(){
-  const from=getIATA('from');
-  const to=getIATA('to');
-  const depdate=document.getElementById('depdate').value;
-  const cabin=document.getElementById('cabin').value;
+  const from = getIATA('from');
+  const to = getIATA('to');
+  const depdate = document.getElementById('depdate').value;
+  const retdate = document.getElementById('retdate').value;
+  const multiDepdate2 = document.getElementById('multiDepdate2').value;
+  const cabin = document.getElementById('cabin').value;
+  const tripType = document.getElementById('tripType').value;
 
-  if(!from||!to){
+  if(!from || !to){
     alert('Please select a valid departure and destination airport.');
     return;
   }
+
   if(!depdate){
     alert('Please select a departure date.');
     return;
   }
 
-  const dl=new Date(depdate+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  document.getElementById('routeTitle').textContent=`${from} → ${to} · ${dl}`;
-  document.getElementById('resultsMetaText').textContent='Fetching…';
+  if(tripType === 'roundtrip' && !retdate){
+    alert('Please select a return date.');
+    return;
+  }
 
-  const btn=document.getElementById('searchBtn');
+  if(tripType === 'multi' && !multiDepdate2){
+    alert('Please select the second departure date.');
+    return;
+  }
+
+  const dl = new Date(depdate + 'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('routeTitle').textContent = `${from} → ${to} · ${dl}`;
+  document.getElementById('resultsMetaText').textContent = 'Fetching…';
+
+  const btn = document.getElementById('searchBtn');
   btn.classList.add('loading');
-  document.getElementById('loadingState').style.display='block';
-  document.getElementById('flightResults').innerHTML='';
+  document.getElementById('loadingState').style.display = 'block';
+  document.getElementById('flightResults').innerHTML = '';
 
   try{
-    const payload={
-      origin:from,
-      destination:to,
-      depart_date:depdate,
+    const payload = {
+      trip_type: tripType,
+      origin: from,
+      destination: to,
+      depart_date: depdate,
+      return_date: tripType === 'roundtrip' ? retdate : null,
+      second_depart_date: tripType === 'multi' ? multiDepdate2 : null,
       cabin,
-      passengers:Number(document.getElementById('pax').value),
-      weight_price:Number(document.getElementById('wPrice').value)/100,
-      weight_stops:Number(document.getElementById('wStops').value)/100,
-      weight_duration:Number(document.getElementById('wDuration').value)/100,
+      passengers: Number(document.getElementById('pax').value),
+      weight_price: Number(document.getElementById('wPrice').value)/100,
+      weight_stops: Number(document.getElementById('wStops').value)/100,
+      weight_duration: Number(document.getElementById('wDuration').value)/100,
     };
 
-    const res=await fetch(`${BACKEND_URL}/api/v1/flights/search`,{
+    const res = await fetch(`${BACKEND_URL}/api/v1/flights/search`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)
     });
 
-    const rawText=await res.text();
-    let data={};
+    const rawText = await res.text();
+    let data = {};
 
     try{
-      data=rawText?JSON.parse(rawText):{};
+      data = rawText ? JSON.parse(rawText) : {};
     }catch{
-      data={detail:rawText};
+      data = {detail: rawText};
     }
 
     if(!res.ok){
-      throw new Error(`Backend ${res.status}: ${data.detail||rawText||'Unknown error'}`);
+      throw new Error(`Backend ${res.status}: ${data.detail || rawText || 'Unknown error'}`);
     }
 
-    FLIGHTS_DB=normalizeFlights(data.flights||[]);
+    FLIGHTS_DB = normalizeFlights(data.flights || []);
     recalcScores();
   }catch(err){
     console.error('Search failed:',err);
-    FLIGHTS_DB=[];
+    FLIGHTS_DB = [];
     updateStats([]);
     updateInsight([]);
-    document.getElementById('flightResults').innerHTML=
+    document.getElementById('flightResults').innerHTML =
       `<div class="message-box" style="border-color:#fecaca;color:#b91c1c;"><strong>Backend error:</strong> ${err.message}<br><span style="font-size:12px;color:var(--text3);">Make sure FastAPI is running at ${BACKEND_URL}</span></div>`;
   }finally{
     btn.classList.remove('loading');
-    document.getElementById('loadingState').style.display='none';
+    document.getElementById('loadingState').style.display = 'none';
   }
 }
 
@@ -1021,6 +1067,8 @@ function showToast(msg){
 
 renderTrips();
 renderAnalytics();
+
+handleTripTypeChange();
 </script>
 </body>
 </html>
