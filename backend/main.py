@@ -41,7 +41,19 @@ class FlightSearchRequest(BaseModel):
     weight_stops: float | None = 0.3
     weight_duration: float | None = 0.2
 
-
+class FlightSearchRequest(BaseModel):
+    trip_type: str | None = "oneway"
+    origin: str
+    destination: str
+    depart_date: str
+    return_date: str | None = None
+    second_depart_date: str | None = None
+    cabin: str | None = "economy"
+    passengers: int | None = 1
+    weight_price: float | None = 0.5
+    weight_stops: float | None = 0.3
+    weight_duration: float | None = 0.2
+    
 @app.get("/")
 def root():
     return {"message": "SkyOpt-IQ backend is running"}
