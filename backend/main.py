@@ -4,20 +4,25 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from serpapi import GoogleSearch
+import serpapi
 
 load_dotenv()
 
 app = FastAPI(title="SkyOpt-IQ Backend")
 
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+allowed_origins = [
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+]
+
+if FRONTEND_URL:
+    allowed_origins.append(FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5500",
-        "http://localhost:5500",
-        # add your real Netlify URL here after deploy
-        # "https://your-site-name.netlify.app",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,11 +60,11 @@ def search_flights(payload: FlightSearchRequest):
         "currency": "USD",
         "hl": "en",
         "type": 2,
-        "api_key": SERPAPI_KEY,
     }
 
     try:
-        results = GoogleSearch(params).get_dict()
+        client = serpapi.Client(api_key=SERPAPI_KEY)
+        results = client.search(params)
 
         if "error" in results:
             raise HTTPException(status_code=502, detail=results["error"])
