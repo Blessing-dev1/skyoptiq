@@ -303,8 +303,13 @@ canvas{display:block;}
 </div>
 <div class="field-group" id="departGroup">
   <label>Depart</label>
-  <input type="date" id="depdate" value="2026-04-15">
+  <input type="date" id="depdate">
 </div>
+
+<script>
+  document.getElementById("depdate").value = 
+    new Date().toISOString().split("T")[0];
+</script>
 
 <div class="field-group" id="returnGroup" style="display:none;">
   <label>Return</label>
