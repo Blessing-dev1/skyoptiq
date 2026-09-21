@@ -563,3 +563,61 @@ def ai_search(payload: AISearchRequest):
         raise
     except Exception:
         raise HTTPException(status_code=502, detail="AI flight search failed.")
+
+DUFFEL_ACCESS_TOKEN = os.getenv("DUFFEL_ACCESS_TOKEN")
+
+DUFFEL_BASE_URL = "https://api.duffel.com"
+
+def duffel_headers():
+    return {
+        "Authorization": f"Bearer {DUFFEL_ACCESS_TOKEN}",
+        "Duffel-Version": "v2",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+
+@app.get("/api/v1/duffel/health")
+def duffel_health():
+    if not DUFFEL_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=500,
+            detail="DUFFEL_ACCESS_TOKEN is not configured"
+        )
+
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            response = client.get(
+                f"{DUFFEL_BASE_URL}/air/airlines",
+                headers=duffel_headers(),
+                params={"limit": 1},
+            )
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=502,
+                detail="Duffel connection failed"
+            )
+
+        data = response.json()
+
+        return {
+            "status": "ok",
+            "duffel_configured": True,
+            "duffel_connected": True,
+            "mode": (
+                "test"
+                if DUFFEL_ACCESS_TOKEN.startswith("duffel_test_")
+                else "live"
+            ),
+            "api_version": "v2",
+            "message": "SkyOpt IQ is connected to Duffel"
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Duffel connection failed"
+        )
