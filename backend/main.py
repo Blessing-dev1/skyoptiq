@@ -18,7 +18,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 
-app = FastAPI(title="SkyOpt IQ Backend", version="4.0.0")
+app = FastAPI(title="SkyOpt IQ Backend", version="4.1.0")
 
 allowed_origins = ["http://127.0.0.1:5500", "http://localhost:5500"]
 if FRONTEND_URL:
@@ -85,7 +85,7 @@ class AISearchRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "SkyOpt IQ backend is running", "version": "4.0.0"}
+    return {"message": "SkyOpt IQ backend is running", "version": "4.1.0"}
 
 
 @app.get("/api/v1/health")
@@ -183,8 +183,8 @@ def search_flights(payload: FlightSearchRequest):
         return {"origin": payload.origin.upper(), "destination": payload.destination.upper(), "flights": flights}
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Flight search error: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Flight provider request failed.")
 
 
 SKYOPT_INSTRUCTIONS = """
@@ -196,7 +196,18 @@ Ask only ONE important missing question at a time and never ask again for inform
 Dates must be YYYY-MM-DD. Current date is 2026-09-21. If the user gives Dec 23-Dec 31 without a year, use 2026.
 If they only say Christmas and exact dates are absent, ask for their date range.
 Never invent flight prices, schedules, or availability. Actual flight data comes from SerpAPI.
-Set ready_to_search=true when origin, usable dates, and either a destination city/country/region are known.
+
+Conversation rules:
+- Preserve facts already present in CURRENT TRIP STATE unless the user explicitly changes them.
+- passengers defaults to 1 and cabin defaults to economy when not otherwise specified.
+- If the user supplies a budget, store it in budget_usd.
+- When budget_usd is known but budget_is_per_person is null, ask whether the budget is TOTAL for the trip or PER PERSON.
+- While that budget-scope clarification is unresolved, ready_to_search MUST be false and missing_fields MUST include "budget_is_per_person".
+- "per person", "each", or an equivalent reply means budget_is_per_person=true.
+- "total", "whole trip", "for everyone", or an equivalent reply means budget_is_per_person=false.
+- A bare "yes", "ok", "okay", "okey", "sure", or similar acknowledgement does NOT answer a total-vs-per-person question. Ask the user to say "total" or "per person".
+- If the user says something like "yes, one person" while a budget-scope clarification is pending, set passengers=1 but still ask "total or per person" unless they explicitly say per person/each or total/for everyone.
+- Do not claim ready_to_search=true in the message when a required clarification is still missing.
 """
 
 TRIP_SCHEMA = {
@@ -235,6 +246,69 @@ TRIP_SCHEMA = {
 }
 
 
+
+def finalize_chat_state(previous: TripState, result: AIChatResponse, user_message: str) -> AIChatResponse:
+    """
+    Deterministic guardrail after the model response.
+    The model extracts intent; this function decides whether a real search is allowed.
+    """
+    state = result.state
+
+    # Product defaults: manual search and AI search should behave consistently.
+    if state.passengers is None:
+        state.passengers = previous.passengers or 1
+    if not state.cabin:
+        state.cabin = previous.cabin or "economy"
+
+    # Preserve an already-known budget if the model accidentally drops it.
+    if state.budget_usd is None and previous.budget_usd is not None:
+        state.budget_usd = previous.budget_usd
+    if state.budget_is_per_person is None and previous.budget_is_per_person is not None:
+        state.budget_is_per_person = previous.budget_is_per_person
+
+    text = (user_message or "").strip().lower()
+
+    # Resolve explicit budget-scope replies deterministically.
+    per_person_phrases = ("per person", "each person", "per traveler", "per traveller", "each traveler", "each traveller")
+    total_phrases = ("total", "whole trip", "for everyone", "for everybody", "all passengers", "altogether")
+
+    if state.budget_usd is not None:
+        if any(p in text for p in per_person_phrases):
+            state.budget_is_per_person = True
+        elif any(p in text for p in total_phrases):
+            state.budget_is_per_person = False
+
+    missing = []
+    if not (state.origin_text or state.origin_zip):
+        missing.append("origin")
+    if not state.date_start:
+        missing.append("date_start")
+    if not (state.destination_city or state.destination_country or state.destination_region):
+        missing.append("destination")
+
+    # A supplied budget has an explicit scope requirement.
+    if state.budget_usd is not None and state.budget_is_per_person is None:
+        missing.append("budget_is_per_person")
+
+    ready = len(missing) == 0
+
+    # Never let a model-generated "ready" message contradict deterministic readiness.
+    if "budget_is_per_person" in missing:
+        message = (
+            f"Is your ${state.budget_usd:,.0f} budget total for the whole trip "
+            "or per person?"
+        )
+    else:
+        message = result.message
+
+    return AIChatResponse(
+        message=message,
+        state=state,
+        ready_to_search=ready,
+        missing_fields=missing,
+    )
+
+
 @app.post("/api/v1/ai/chat", response_model=AIChatResponse)
 def ai_chat(payload: AIChatRequest):
     if not openai_client:
@@ -249,9 +323,12 @@ def ai_chat(payload: AIChatRequest):
             input=f"CURRENT TRIP STATE:\n{payload.state.model_dump_json(indent=2)}\n\nNEW USER MESSAGE:\n{payload.message}",
             text={"format": {"type": "json_schema", "name": "skyopt_trip_state", "strict": True, "schema": TRIP_SCHEMA}},
         )
-        return AIChatResponse(**json.loads(response.output_text))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"SkyOpt AI error: {str(e)}")
+        parsed = AIChatResponse(**json.loads(response.output_text))
+        return finalize_chat_state(payload.state, parsed, payload.message)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="SkyOpt AI request failed.")
 
 
 # ============================================================
@@ -437,8 +514,8 @@ def ai_search(payload: AISearchRequest):
                         f["destination_city"] = destination["city"]
                         f["destination_reason"] = destination["reason"]
                         all_flights.append(f)
-                except Exception as exc:
-                    errors.append({"pair": f"{o}-{d}", "error": str(exc)})
+                except Exception:
+                    errors.append({"pair": f"{o}-{d}", "error": "Flight provider request failed."})
 
         flights_before_filters = len(all_flights)
 
@@ -484,6 +561,5 @@ def ai_search(payload: AISearchRequest):
         }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI flight search error: {str(e)}")
-
+    except Exception:
+        raise HTTPException(status_code=502, detail="AI flight search failed.")
