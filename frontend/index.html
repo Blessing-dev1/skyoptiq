@@ -284,6 +284,18 @@ canvas{display:block;}
 @media(max-width:900px){.layout{grid-template-columns:1fr;}.stats-row{grid-template-columns:repeat(2,1fr);}.card-inner{grid-template-columns:1fr;}.charts-grid{grid-template-columns:1fr;}.footer-inner{grid-template-columns:1fr;}.footer-links{grid-template-columns:1fr 1fr;}}
 @media(max-width:700px){.hero-search{padding:20px;}.hero-search-inner{flex-direction:column;align-items:stretch;}.hero-search-inner>*{width:100%;}.swap-icon{display:none;}.topbar-center{flex-wrap:wrap;}.detail-grid{grid-template-columns:1fr;}.detail-route{grid-template-columns:1fr;}.detail-arrow{display:none;}}
 @media(max-width:640px){.layout{padding:1rem;}.stats-row{grid-template-columns:1fr 1fr;}.footer-links{grid-template-columns:1fr;}.footer-inner,.footer-bottom{padding-left:20px;padding-right:20px;}}
+
+/* V11 Duffel transactional checkout */
+.booking-modal{position:fixed;inset:0;z-index:10050;display:none}.booking-modal.open{display:block}
+.booking-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.62);backdrop-filter:blur(3px)}
+.booking-panel{position:relative;width:min(900px,calc(100% - 28px));max-height:calc(100vh - 32px);overflow:auto;margin:16px auto;background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.3)}
+.booking-head{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid var(--border);padding:17px 20px;display:flex;justify-content:space-between;align-items:center}.booking-body{padding:20px}
+.booking-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}.booking-step{font:10px 'Space Mono',monospace;padding:6px 9px;border-radius:999px;background:var(--surface3);color:var(--text3)}.booking-step.active{background:var(--boeing-blue);color:#fff}
+.booking-summary{border:1px solid var(--border);border-radius:14px;padding:14px;background:var(--surface2);margin-bottom:16px}.booking-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.booking-k{font:9px 'Space Mono',monospace;text-transform:uppercase;color:var(--text3)}.booking-v{font-weight:700;margin-top:3px}
+.passenger-card{border:1px solid var(--border);border-radius:14px;padding:15px;margin:12px 0}.booking-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.booking-field{display:flex;flex-direction:column;gap:5px}.booking-field label{font:10px 'Space Mono',monospace;color:var(--text3);text-transform:uppercase}.booking-field input,.booking-field select{height:42px;border:1px solid var(--border2);border-radius:10px;padding:0 11px}
+.booking-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.booking-primary,.booking-secondary{border-radius:10px;padding:10px 15px;font-weight:700;cursor:pointer}.booking-primary{border:0;background:var(--boeing-blue);color:#fff}.booking-primary:disabled{opacity:.55}.booking-secondary{border:1px solid var(--border2);background:#fff}.booking-alert{padding:11px 13px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;margin:12px 0}.booking-success{padding:18px;border:1px solid #a7f3d0;background:#ecfdf5;border-radius:14px;text-align:center}.booking-ref{font:700 24px 'Space Mono',monospace;color:#047857;margin:8px 0}.duffel-book-btn{width:100%;margin-top:8px;background:#0f766e;border:0;border-radius:10px;padding:8px 0;color:#fff;font-weight:700;cursor:pointer}
+@media(max-width:700px){.booking-summary-grid,.booking-fields{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -380,6 +392,7 @@ canvas{display:block;}
       <button class="hero-search-btn" id="searchBtn" onclick="startSearch()">
         <span class="icon">⟳</span><span class="spin">↻</span> Search All Sources
       </button>
+      <button class="hero-search-btn" type="button" onclick="runDuffelTransactionalSearch()" style="background:#0f766e;min-width:180px">✈ Bookable Flights</button>
     </div>
   </section>
 
@@ -516,6 +529,11 @@ canvas{display:block;}
   </div>
 </div>
 
+
+<div id="bookingModal" class="booking-modal" aria-hidden="true"><div class="booking-backdrop" onclick="closeBookingModal()"></div><div class="booking-panel">
+<div class="booking-head"><h2>SkyOpt IQ Checkout <span style="font-size:11px;color:var(--green);font-family:'Space Mono',monospace">DUFFEL TEST MODE</span></h2><button class="flight-modal-close" onclick="closeBookingModal()">✕</button></div>
+<div class="booking-body" id="bookingBody"></div></div></div>
+
 <div id="skyopt-toast" style="opacity:0;">Trip saved!</div>
 
 <footer class="site-footer">
@@ -553,6 +571,42 @@ canvas{display:block;}
 
 <script>
 const BACKEND_URL = 'https://skyoptiq-2.onrender.com';
+
+let DUFFEL_BOOKING_OFFER=null;
+function escHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtMoney(v,c='USD'){try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c||'USD'}).format(Number(v||0))}catch(e){return '$'+Number(v||0).toFixed(2)}}
+function closeBookingModal(){const m=document.getElementById('bookingModal');m.classList.remove('open');m.setAttribute('aria-hidden','true');}
+function bookingSummaryHtml(f){return `<div class="booking-summary"><div class="booking-summary-grid"><div><div class="booking-k">Airline</div><div class="booking-v">${escHtml(f.airline)}</div></div><div><div class="booking-k">Route</div><div class="booking-v">${escHtml(f.origin_iata||'')} → ${escHtml(f.destination_iata||'')}</div></div><div><div class="booking-k">Stops</div><div class="booking-v">${Number(f.stops||0)===0?'Nonstop':escHtml(f.stops)+' stop(s)'}</div></div><div><div class="booking-k">Current total</div><div class="booking-v">${fmtMoney(f.price,f.currency)}</div></div></div></div>`;}
+async function openDuffelCheckoutById(offerId){
+ const m=document.getElementById('bookingModal'),b=document.getElementById('bookingBody');m.classList.add('open');m.setAttribute('aria-hidden','false');b.innerHTML='<div class="loading-bar">Refreshing live offer and price…</div>';
+ try{const r=await fetch(`${BACKEND_URL}/api/v1/duffel/offers/${encodeURIComponent(offerId)}`),d=await r.json();if(!r.ok)throw new Error(d.detail||'Offer unavailable');DUFFEL_BOOKING_OFFER=d.offer;renderPassengerCheckout(d.offer)}
+ catch(e){b.innerHTML=`<div class="message-box"><strong>Could not continue to checkout.</strong><br>${escHtml(e.message)}<br><br>Search again for a fresh offer.</div>`}
+}
+function renderPassengerCheckout(f){
+ const ps=Array.isArray(f.passengers)?f.passengers:[];
+ const cards=ps.map((p,i)=>`<div class="passenger-card" data-passenger-id="${escHtml(p.id)}"><h3>Passenger ${i+1}</h3><div class="booking-fields"><div class="booking-field"><label>Title</label><select class="p-title"><option value="mr">Mr</option><option value="ms">Ms</option><option value="mrs">Mrs</option><option value="miss">Miss</option><option value="dr">Dr</option></select></div><div class="booking-field"><label>Gender</label><select class="p-gender"><option value="m">Male</option><option value="f">Female</option></select></div><div class="booking-field"><label>Given name</label><input class="p-given"></div><div class="booking-field"><label>Family name</label><input class="p-family"></div><div class="booking-field"><label>Date of birth</label><input class="p-dob" type="date"></div><div class="booking-field"><label>Email</label><input class="p-email" type="email"></div><div class="booking-field"><label>Phone (+16035551234)</label><input class="p-phone" type="tel"></div></div></div>`).join('');
+ document.getElementById('bookingBody').innerHTML=`<div class="booking-steps"><span class="booking-step active">1 Passenger details</span><span class="booking-step">2 Review</span><span class="booking-step">3 Test booking</span><span class="booking-step">4 Confirmation</span></div>${bookingSummaryHtml(f)}<div class="booking-alert">Test mode only. No real ticket or real card charge will be created.</div>${cards}<div class="booking-actions"><button class="booking-secondary" onclick="closeBookingModal()">Cancel</button><button class="booking-primary" onclick="reviewDuffelBooking()">Review booking</button></div>`;
+}
+function collectDuffelPassengers(){return [...document.querySelectorAll('.passenger-card')].map(c=>({id:c.dataset.passengerId,given_name:c.querySelector('.p-given').value.trim(),family_name:c.querySelector('.p-family').value.trim(),born_on:c.querySelector('.p-dob').value,gender:c.querySelector('.p-gender').value,title:c.querySelector('.p-title').value,email:c.querySelector('.p-email').value.trim()||null,phone_number:c.querySelector('.p-phone').value.trim()||null}));}
+function reviewDuffelBooking(){
+ const ps=collectDuffelPassengers();if(ps.some(p=>!p.given_name||!p.family_name||!p.born_on)){alert('Enter each passenger’s name and date of birth.');return}window.DUFFEL_PENDING_PASSENGERS=ps;const f=DUFFEL_BOOKING_OFFER;
+ document.getElementById('bookingBody').innerHTML=`<div class="booking-steps"><span class="booking-step">1 Passenger details</span><span class="booking-step active">2 Review</span><span class="booking-step">3 Test booking</span><span class="booking-step">4 Confirmation</span></div>${bookingSummaryHtml(f)}<div class="detail-block"><div class="detail-block-title">Passengers</div>${ps.map(p=>`<div><strong>${escHtml(p.given_name)} ${escHtml(p.family_name)}</strong> · DOB ${escHtml(p.born_on)}</div>`).join('')}</div><div class="booking-alert">Continuing creates a Duffel TEST order using the test balance. This is not a real purchase.</div><div class="booking-actions"><button class="booking-secondary" onclick="renderPassengerCheckout(DUFFEL_BOOKING_OFFER)">Back</button><button id="testBookBtn" class="booking-primary" onclick="createDuffelTestOrder()">Create test booking</button></div>`;
+}
+async function createDuffelTestOrder(){
+ const btn=document.getElementById('testBookBtn');btn.disabled=true;btn.textContent='Creating test booking…';
+ try{const r=await fetch(`${BACKEND_URL}/api/v1/duffel/orders/test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offer_id:DUFFEL_BOOKING_OFFER.offer_id,passengers:window.DUFFEL_PENDING_PASSENGERS||[]})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Test booking failed');
+ try{const a=JSON.parse(localStorage.getItem('skyopt_duffel_test_orders')||'[]');a.unshift({saved_at:new Date().toISOString(),order_id:d.order_id,booking_reference:d.booking_reference,total_amount:d.total_amount,total_currency:d.total_currency,offer:DUFFEL_BOOKING_OFFER});localStorage.setItem('skyopt_duffel_test_orders',JSON.stringify(a.slice(0,20)))}catch(_){}
+ document.getElementById('bookingBody').innerHTML=`<div class="booking-steps"><span class="booking-step">1 Passenger details</span><span class="booking-step">2 Review</span><span class="booking-step">3 Test booking</span><span class="booking-step active">4 Confirmation</span></div><div class="booking-success"><div style="font-size:30px">✓</div><h2>Test booking confirmed</h2><div class="booking-ref">${escHtml(d.booking_reference||'CONFIRMED')}</div><div>Order ${escHtml(d.order_id||'')}</div><div style="margin-top:8px;font-weight:700">${fmtMoney(d.total_amount,d.total_currency)}</div></div>${bookingSummaryHtml(DUFFEL_BOOKING_OFFER)}<div class="booking-alert">Duffel TEST MODE: this is not a real airline ticket.</div><div class="booking-actions"><button class="booking-primary" onclick="closeBookingModal()">Done</button></div>`}
+ catch(e){btn.disabled=false;btn.textContent='Create test booking';alert(e.message)}
+}
+async function runDuffelTransactionalSearch(){
+ const origin=getIATA('from'),destination=getIATA('to'),depart=document.getElementById('depdate').value,trip=document.getElementById('tripType').value,ret=trip==='roundtrip'?document.getElementById('retdate').value:null;
+ if(!origin||!destination||!depart){alert('Choose From, To, and departure date first.');return}
+ const loading=document.getElementById('loadingState');loading.style.display='block';
+ try{const r=await fetch(`${BACKEND_URL}/api/v1/duffel/search`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origin,destination,depart_date:depart,return_date:ret||null,cabin:document.getElementById('cabin').value,passengers:Number(document.getElementById('pax').value||1),max_connections:1})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Duffel search failed');FLIGHTS_DB=normalizeFlights(d.flights||[]);const ranked=calcScores(FLIGHTS_DB);renderFlights(ranked);updateStats(ranked);updateInsight(ranked);document.getElementById('routeTitle').textContent=`${origin} → ${destination} · Bookable`;document.getElementById('resultsMetaText').textContent=`${ranked.length} live Duffel test offers · Select & Checkout`}
+ catch(e){document.getElementById('flightResults').innerHTML=`<div class="message-box"><strong>Duffel search failed.</strong><br>${escHtml(e.message)}</div>`}finally{loading.style.display='none'}
+}
+
 
 const AIRPORTS=[
   {iata:'JFK',name:'John F. Kennedy International',city:'New York',country:'US',aliases:['kennedy','new york','nyc','jfk']},
@@ -1120,6 +1174,15 @@ function normalizeFlights(flights){
       carbonEmissions:f.carbon_emissions||null,
       layovers:f.layovers||[],
       legs:f.legs||[],
+      offer_id:f.offer_id||null,
+      expires_at:f.expires_at||null,
+      currency:f.currency||'USD',
+      origin_iata:f.origin_iata||null,
+      destination_iata:f.destination_iata||null,
+      operating_carriers:f.operating_carriers||[],
+      passengers:f.passengers||[],
+      conditions:f.conditions||null,
+      slices:f.slices||[],
     };
   }).filter(f=>f.price>0);
 }
@@ -1170,7 +1233,9 @@ function renderFlights(fl){
         <div class="score-col"><div class="score-ring ${scCls(f.score)}">${f.score}</div><div style="font-size:9px;color:var(--text3);font-family:'Space Mono',monospace;">score</div></div>
         <div class="price-col">
           <div class="price-main">$${f.price}</div><div class="price-per">per person</div>
-          <button class="select-btn" onclick="event.stopPropagation();saveTrip(${f.id})">${i===0?'Book Now':'Save Trip'}</button>
+          ${f.source==='duffel'
+ ? `<button class="duffel-book-btn" onclick="event.stopPropagation();openDuffelCheckoutById('${f.offer_id}')">Select & Checkout</button>`
+ : `<button class="select-btn" onclick="event.stopPropagation();saveTrip(${f.id})">${i===0?'Book Now':'Save Trip'}</button>`}
         </div>
       </div>
       <div class="score-breakdown">
