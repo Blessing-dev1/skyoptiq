@@ -1,6 +1,8 @@
 import os
 import json
 from typing import Optional
+from datetime import datetime, timezone
+import secrets
 from math import radians, sin, cos, sqrt, atan2
 
 import serpapi
@@ -10,6 +12,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
+import psycopg
+from psycopg.rows import dict_row
 
 load_dotenv()
 
@@ -19,8 +23,9 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 DUFFEL_ACCESS_TOKEN = os.getenv("DUFFEL_ACCESS_TOKEN")
 DUFFEL_BASE_URL = "https://api.duffel.com"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-app = FastAPI(title="SkyOpt IQ Backend", version="4.2.0")
+app = FastAPI(title="SkyOpt IQ Backend", version="4.3.0")
 
 allowed_origins = ["http://127.0.0.1:5500", "http://localhost:5500"]
 if FRONTEND_URL:
@@ -89,7 +94,7 @@ class AISearchRequest(BaseModel):
 def root():
     return {
         "message": "SkyOpt IQ backend is running",
-        "version": "4.2.0"
+        "version": "4.3.0"
     }
 
 @app.get("/api/v1/health")
@@ -99,6 +104,7 @@ def health():
         "serpapi_configured": bool(SERPAPI_KEY),
         "openai_configured": bool(OPENAI_API_KEY),
         "duffel_configured": bool(DUFFEL_ACCESS_TOKEN),
+        "database_configured": bool(DATABASE_URL),
     }
 
 
@@ -569,6 +575,177 @@ def ai_search(payload: AISearchRequest):
     except Exception:
         raise HTTPException(status_code=502, detail="AI flight search failed.")
 
+
+
+# ============================================================
+# SKYOPT BOOKING DATABASE
+# ============================================================
+
+def db_connect():
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not configured")
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+def init_database():
+    if not DATABASE_URL:
+        return
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS skyopt_bookings (
+                    id BIGSERIAL PRIMARY KEY,
+                    manage_token TEXT NOT NULL UNIQUE,
+                    provider TEXT NOT NULL DEFAULT 'duffel',
+                    provider_order_id TEXT NOT NULL UNIQUE,
+                    booking_reference TEXT,
+                    status TEXT NOT NULL DEFAULT 'confirmed',
+                    test_mode BOOLEAN NOT NULL DEFAULT TRUE,
+                    total_amount NUMERIC(12,2),
+                    total_currency VARCHAR(8),
+                    contact_email TEXT,
+                    airline TEXT,
+                    origin_iata VARCHAR(8),
+                    destination_iata VARCHAR(8),
+                    departing_at TIMESTAMPTZ,
+                    arriving_at TIMESTAMPTZ,
+                    passenger_count INTEGER NOT NULL DEFAULT 1,
+                    available_actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    itinerary JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    provider_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_skyopt_bookings_created_at ON skyopt_bookings(created_at DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_skyopt_bookings_contact_email ON skyopt_bookings(contact_email)")
+        conn.commit()
+
+
+@app.on_event("startup")
+def startup_database():
+    init_database()
+
+
+def _order_summary(order: dict) -> dict:
+    slices = order.get("slices") or []
+    segments = [seg for sl in slices for seg in (sl.get("segments") or [])]
+    first = segments[0] if segments else {}
+    last = segments[-1] if segments else {}
+    owner = order.get("owner") or {}
+    contact_email = None
+    passengers = order.get("passengers") or []
+    for p in passengers:
+        if p.get("email"):
+            contact_email = p.get("email")
+            break
+    return {
+        "contact_email": contact_email,
+        "airline": owner.get("name"),
+        "origin_iata": ((slices[0].get("origin") or {}).get("iata_code") if slices else None),
+        "destination_iata": ((slices[0].get("destination") or {}).get("iata_code") if slices else None),
+        "departing_at": first.get("departing_at"),
+        "arriving_at": last.get("arriving_at"),
+        "passenger_count": len(passengers) or 1,
+        "itinerary": {"slices": slices},
+    }
+
+
+def save_booking(order: dict, test_mode: bool = True) -> dict:
+    summary = _order_summary(order)
+    token = secrets.token_urlsafe(32)
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO skyopt_bookings (
+                    manage_token, provider_order_id, booking_reference, status, test_mode,
+                    total_amount, total_currency, contact_email, airline, origin_iata,
+                    destination_iata, departing_at, arriving_at, passenger_count,
+                    available_actions, itinerary, provider_snapshot
+                ) VALUES (
+                    %(manage_token)s, %(provider_order_id)s, %(booking_reference)s, %(status)s, %(test_mode)s,
+                    %(total_amount)s, %(total_currency)s, %(contact_email)s, %(airline)s, %(origin_iata)s,
+                    %(destination_iata)s, %(departing_at)s, %(arriving_at)s, %(passenger_count)s,
+                    %(available_actions)s::jsonb, %(itinerary)s::jsonb, %(provider_snapshot)s::jsonb
+                )
+                ON CONFLICT (provider_order_id) DO UPDATE SET
+                    booking_reference=EXCLUDED.booking_reference,
+                    status=EXCLUDED.status,
+                    total_amount=EXCLUDED.total_amount,
+                    total_currency=EXCLUDED.total_currency,
+                    available_actions=EXCLUDED.available_actions,
+                    itinerary=EXCLUDED.itinerary,
+                    provider_snapshot=EXCLUDED.provider_snapshot,
+                    updated_at=NOW()
+                RETURNING id, manage_token, provider_order_id, booking_reference, status, test_mode,
+                          total_amount, total_currency, airline, origin_iata, destination_iata,
+                          departing_at, arriving_at, passenger_count, created_at, updated_at
+            """, {
+                "manage_token": token,
+                "provider_order_id": order.get("id"),
+                "booking_reference": order.get("booking_reference"),
+                "status": "confirmed",
+                "test_mode": test_mode,
+                "total_amount": order.get("total_amount"),
+                "total_currency": order.get("total_currency"),
+                **summary,
+                "available_actions": json.dumps(order.get("available_actions") or []),
+                "itinerary": json.dumps(summary["itinerary"]),
+                "provider_snapshot": json.dumps(order),
+            })
+            row = cur.fetchone()
+        conn.commit()
+    return dict(row)
+
+
+def _require_booking_access(booking_id: int, manage_token: str):
+    if not manage_token:
+        raise HTTPException(status_code=401, detail="Booking management token is required")
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, manage_token, provider_order_id, booking_reference, status, test_mode,
+                       total_amount, total_currency, airline, origin_iata, destination_iata,
+                       departing_at, arriving_at, passenger_count, available_actions,
+                       itinerary, created_at, updated_at
+                FROM skyopt_bookings
+                WHERE id=%s AND manage_token=%s
+            """, (booking_id, manage_token))
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return dict(row)
+
+
+@app.get("/api/v1/bookings/{booking_id}")
+def get_booking(booking_id: int, manage_token: str):
+    return {"booking": _require_booking_access(booking_id, manage_token)}
+
+
+@app.get("/api/v1/bookings/{booking_id}/refresh")
+def refresh_booking(booking_id: int, manage_token: str):
+    booking = _require_booking_access(booking_id, manage_token)
+    order_id = booking["provider_order_id"]
+    with httpx.Client(timeout=25.0) as client:
+        response = client.get(f"{DUFFEL_BASE_URL}/air/orders/{order_id}", headers=duffel_headers())
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=duffel_error_detail(response))
+    order = response.json().get("data") or {}
+    with db_connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE skyopt_bookings SET
+                    booking_reference=%s, total_amount=%s, total_currency=%s,
+                    available_actions=%s::jsonb, provider_snapshot=%s::jsonb, updated_at=NOW()
+                WHERE id=%s AND manage_token=%s
+            """, (
+                order.get("booking_reference"), order.get("total_amount"), order.get("total_currency"),
+                json.dumps(order.get("available_actions") or []), json.dumps(order), booking_id, manage_token
+            ))
+        conn.commit()
+    return {"booking": _require_booking_access(booking_id, manage_token), "provider_order": order}
+
+
 # ============================================================
 # DUFFEL TRANSACTIONAL FLIGHTS (TEST MODE FIRST)
 # ============================================================
@@ -862,9 +1039,12 @@ def duffel_create_test_order(payload: DuffelTestOrderRequest):
             raise HTTPException(status_code=502, detail=duffel_error_detail(response))
 
         order = response.json().get("data") or {}
+        booking = save_booking(order, test_mode=True)
         return {
             "status": "confirmed",
             "test_mode": True,
+            "booking_id": booking.get("id"),
+            "manage_token": booking.get("manage_token"),
             "order_id": order.get("id"),
             "booking_reference": order.get("booking_reference"),
             "total_amount": order.get("total_amount"),
