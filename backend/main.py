@@ -25,7 +25,7 @@ DUFFEL_ACCESS_TOKEN = os.getenv("DUFFEL_ACCESS_TOKEN")
 DUFFEL_BASE_URL = "https://api.duffel.com"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-app = FastAPI(title="SkyOpt IQ Backend", version="4.3.0")
+app = FastAPI(title="SkyBas Backend", version="4.3.0")
 
 allowed_origins = ["http://127.0.0.1:5500", "http://localhost:5500"]
 if FRONTEND_URL:
@@ -93,7 +93,7 @@ class AISearchRequest(BaseModel):
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {
-        "message": "SkyOpt IQ backend is running",
+        "message": "SkyBas backend is running",
         "version": "4.3.0"
     }
 
@@ -199,7 +199,7 @@ def search_flights(payload: FlightSearchRequest):
 
 
 SKYOPT_INSTRUCTIONS = """
-You are SkyOpt IQ, a conversational travel-search assistant. Build and preserve a structured trip state.
+You are SkyBas, a conversational travel-search assistant. Build and preserve a structured trip state.
 Never ask users for airport codes. Accept city/town/state/ZIP origins. If origin is only broad (for example USA), ask for city or ZIP.
 A specific city such as Boston or Keene, NH is sufficient; do not ask for ZIP after that.
 Accept specific destinations or discovery requests such as 'somewhere warm in Europe'.
@@ -339,7 +339,7 @@ def ai_chat(payload: AIChatRequest):
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=502, detail="SkyOpt AI request failed.")
+        raise HTTPException(status_code=502, detail="SkyBas AI request failed.")
 
 
 # ============================================================
@@ -396,7 +396,7 @@ def geocode_origin(state: TripState) -> dict:
     if state.origin_zip:
         query = f"{state.origin_zip}, USA"
 
-    headers = {"User-Agent": "SkyOpt-IQ/4.0 (flight search application)"}
+    headers = {"User-Agent": "SkyBas/4.0 (flight search application)"}
     params = {"q": query, "format": "jsonv2", "limit": 1, "countrycodes": "us"}
     with httpx.Client(timeout=12.0, headers=headers) as client:
         response = client.get("https://nominatim.openstreetmap.org/search", params=params)
@@ -885,7 +885,7 @@ def duffel_health():
             "duffel_connected": True,
             "mode": "test" if DUFFEL_ACCESS_TOKEN.startswith("duffel_test_") else "live",
             "api_version": "v2",
-            "message": "SkyOpt IQ is connected to Duffel",
+            "message": "SkyBas is connected to Duffel",
         }
     except HTTPException:
         raise
