@@ -1559,9 +1559,135 @@ async function tryConcreteFlightSearch(){
   document.getElementById('resultsMetaText').textContent=`SkyOpt IQ searched ${(data.searched_pairs||[]).length} route combination${(data.searched_pairs||[]).length===1?'':'s'}`;
 
   addAiMessage(`${data.message||'Search complete.'} I found ${ranked.length} matching option${ranked.length===1?'':'s'} and ranked them below. The current top result is ${best.originIata||''} → ${best.destinationIata||''} on ${best.airline} for $${best.price}.`);
-  document.getElementById('resultsGrid')?.scrollIntoView({behavior:'smooth',block:'start'});
+  document.getElementById('flightResults')?.scrollIntoView({behavior:'smooth',block:'start'});
   return true;
 }
+
+function isPdfDownloadIntent(message){
+  const s=String(message||'').trim().toLowerCase();
+  return /\b(pdf|download|export|print)\b/.test(s) &&
+    (
+      /\bpdf\b/.test(s) ||
+      /\b(download|export|print)\b/.test(s) &&
+      /\b(it|this|trip|flight|flights|results|itinerary|summary)\b/.test(s)
+    );
+}
+
+function pdfSafeText(value){
+  return String(value??'')
+    .replace(/[^\x20-\x7E]/g,' ')
+    .replace(/\\/g,'\\\\')
+    .replace(/\(/g,'\\(')
+    .replace(/\)/g,'\\)');
+}
+
+function buildSimplePdf(lines){
+  // Small dependency-free PDF generator for text-only trip summaries.
+  const pageWidth=612,pageHeight=792,left=54,top=742,lineHeight=15;
+  const maxLines=44;
+  const pages=[];
+  for(let i=0;i<lines.length;i+=maxLines)pages.push(lines.slice(i,i+maxLines));
+  if(!pages.length)pages.push(['SkyOpt IQ Trip Summary']);
+
+  const objects=[];
+  const add=obj=>{objects.push(obj);return objects.length;};
+
+  const fontId=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const boldFontId=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  const pagesId=add(''); // filled after page objects exist
+  const pageIds=[];
+
+  pages.forEach((pageLines,pageIndex)=>{
+    let stream='BT\n';
+    pageLines.forEach((line,i)=>{
+      const y=top-i*lineHeight;
+      const isTitle=pageIndex===0 && i===0;
+      stream+=`${isTitle?'/F2 16':'/F1 10'} Tf\n`;
+      stream+=`1 0 0 1 ${left} ${y} Tm\n(${pdfSafeText(line)}) Tj\n`;
+    });
+    stream+='ET\n';
+    const contentId=add(`<< /Length ${stream.length} >>\nstream\n${stream}endstream`);
+    const pageId=add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R /F2 ${boldFontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+    pageIds.push(pageId);
+  });
+
+  objects[pagesId-1]=`<< /Type /Pages /Kids [${pageIds.map(id=>`${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  const catalogId=add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  let pdf='%PDF-1.4\n';
+  const offsets=[0];
+  objects.forEach((obj,i)=>{
+    offsets[i+1]=pdf.length;
+    pdf+=`${i+1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xref=pdf.length;
+  pdf+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=objects.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  pdf+=`trailer\n<< /Size ${objects.length+1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf],{type:'application/pdf'});
+}
+
+function downloadCurrentTripPdf(){
+  if(!Array.isArray(FLIGHTS_DB)||!FLIGHTS_DB.length){
+    addAiMessage('I do not have flight results to export yet. Search for flights first, then ask me to download the PDF.');
+    return false;
+  }
+
+  const ranked=calcScores(FLIGHTS_DB).sort((a,b)=>b.score-a.score);
+  const origin=AI_STATE.origin_text||AI_STATE.origin_zip||ranked[0]?.originIata||'Not specified';
+  const destination=AI_STATE.destination_city||AI_STATE.destination_region||ranked[0]?.destinationCity||ranked[0]?.destinationIata||'Not specified';
+  const dates=AI_STATE.date_start
+    ? `${AI_STATE.date_start}${AI_STATE.date_end?' to '+AI_STATE.date_end:''}`
+    : 'Not specified';
+  const budget=AI_STATE.budget_usd!=null
+    ? `$${Number(AI_STATE.budget_usd).toFixed(0)}${AI_STATE.budget_is_per_person===true?' per person':AI_STATE.budget_is_per_person===false?' total':''}`
+    : 'Not specified';
+
+  const lines=[
+    'SkyOpt IQ - Flight Search Summary',
+    '',
+    `Origin: ${origin}`,
+    `Destination: ${destination}`,
+    `Dates: ${dates}`,
+    `Passengers: ${AI_STATE.passengers||1}`,
+    `Cabin: ${AI_STATE.cabin||'economy'}`,
+    `Budget: ${budget}`,
+    '',
+    `Ranked flight options (${ranked.length})`,
+    ''
+  ];
+
+  ranked.slice(0,25).forEach((f,i)=>{
+    const duration=Number(f.duration||0);
+    const dh=Math.floor(duration/60),dm=duration%60;
+    lines.push(
+      `${i+1}. ${f.airline||'Airline'} ${f.flightCode||f.flight_code||''}`.trim(),
+      `   ${f.originIata||''} to ${f.destinationIata||''} | $${f.price} per person | ${f.stops} stop${f.stops===1?'':'s'} | ${dh}h ${dm}m | score ${Number(f.score||0).toFixed(1)}`,
+      `   Departure: ${f.depTime||f.dep_time||'N/A'} | Arrival: ${f.arrTime||f.arr_time||'N/A'}`,
+      ''
+    );
+  });
+
+  lines.push(
+    'Prices and schedules can change. Re-check live availability before booking.',
+    'This summary is not a ticket or confirmed reservation.'
+  );
+
+  const blob=buildSimplePdf(lines);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const destSlug=String(destination).replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')||'Trip';
+  a.href=url;
+  a.download=`SkyOpt-IQ-${destSlug}-Trip-Summary.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+
+  addAiMessage(`Your PDF is ready. I downloaded a summary with ${ranked.length} ranked flight option${ranked.length===1?'':'s'}.`);
+  return true;
+}
+
 async function runAiSearch(){
   const input=document.getElementById('aiPrompt');
   const btn=document.getElementById('aiSendBtn');
@@ -1570,6 +1696,14 @@ async function runAiSearch(){
 
   addAiMessage(message,'user');
   input.value='';
+
+  // PDF/export requests are local UI actions. Do not send them through the
+  // conversational trip-state endpoint and do not trigger another SerpApi search.
+  if(isPdfDownloadIntent(message)){
+    downloadCurrentTripPdf();
+    return;
+  }
+
   btn.disabled=true;
   btn.textContent='Thinking…';
 
