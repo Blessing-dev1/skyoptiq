@@ -390,7 +390,10 @@ canvas{display:block;}
           <div class="ai-search-title"><span class="ai-badge">AI</span> Ask SkyOpt IQ</div>
           <div class="ai-search-sub">Describe the trip you want in plain language. Describe your trip naturally. SkyOpt IQ will ask for anything missing, then search the same live flight engine used above.</div>
         </div>
-        <div class="ai-search-sub">Chat → understand trip → search flights → rank results</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <div class="ai-search-sub">Chat → understand trip → search flights → rank results</div>
+          <button type="button" onclick="clearSkyOptChat()" title="Delete this saved conversation and start a new trip" style="border:1px solid var(--border,#d9d9d9);background:transparent;border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit">New Trip / Clear Chat</button>
+        </div>
       </div>
       <div class="ai-chat-log" id="aiChatLog">
         <div class="ai-msg bot">Tell me where and roughly when you want to travel. You do not need to know an airport. Example: “I want to travel from USA to Barcelona between Dec 23 and Dec 31.”</div>
@@ -1471,8 +1474,109 @@ function aiSearchFingerprint(){
 const AIRPORT_COORDS={
  JFK:[40.6413,-73.7781],LGA:[40.7769,-73.8740],EWR:[40.6895,-74.1745],LAX:[33.9416,-118.4085],ORD:[41.9742,-87.9073],MDW:[41.7868,-87.7522],ATL:[33.6407,-84.4277],DFW:[32.8998,-97.0403],DEN:[39.8561,-104.6737],SFO:[37.6213,-122.3790],SEA:[47.4502,-122.3088],MIA:[25.7959,-80.2870],BOS:[42.3656,-71.0096],IAD:[38.9531,-77.4565],DCA:[38.8512,-77.0402],LAS:[36.0840,-115.1537],PHX:[33.4342,-112.0116],MSP:[44.8848,-93.2223],DTW:[42.2162,-83.3554],CLT:[35.2140,-80.9431],MCO:[28.4312,-81.3081],IAH:[29.9902,-95.3368],HOU:[29.6454,-95.2789],SAN:[32.7338,-117.1933],TPA:[27.9755,-82.5332],PDX:[45.5898,-122.5951],SLC:[40.7899,-111.9791],AUS:[30.1975,-97.6664],BNA:[36.1263,-86.6774],MCI:[39.2976,-94.7139],PHL:[39.8744,-75.2424],BWI:[39.1774,-76.6684],BDL:[41.9389,-72.6832],ALB:[42.7483,-73.8017],BUF:[42.9405,-78.7322],PIT:[40.4915,-80.2329],RDU:[35.8801,-78.7880],RIC:[37.5052,-77.3197],CLE:[41.4117,-81.8498],CMH:[39.9980,-82.8919],CVG:[39.0488,-84.6678],FLL:[26.0742,-80.1506],JAX:[30.4941,-81.6879],MSY:[29.9934,-90.2580],STL:[38.7487,-90.3700],CHS:[32.8986,-80.0405],MEM:[35.0424,-89.9767],SJC:[37.3639,-121.9289],OAK:[37.7126,-122.2197],SMF:[38.6954,-121.5908],SNA:[33.6757,-117.8682],SAT:[29.5337,-98.4698],ABQ:[35.0402,-106.6090],ANC:[61.1743,-149.9985],MHT:[42.9326,-71.4357]
 };
+
+const SKYOPT_CHAT_STORAGE_KEY='skyoptiq_chat_v1';
+const SKYOPT_DEFAULT_MESSAGE='Tell me where and roughly when you want to travel. You do not need to know an airport. Example: “I want to travel from USA to Barcelona between Dec 23 and Dec 31.”';
+
+function getSavedChatMessages(){
+  const log=document.getElementById('aiChatLog');
+  if(!log)return[];
+  return Array.from(log.querySelectorAll('.ai-msg')).map(el=>({
+    who:el.classList.contains('user')?'user':'bot',
+    text:el.textContent||''
+  }));
+}
+
+function saveSkyOptSession(){
+  try{
+    localStorage.setItem(SKYOPT_CHAT_STORAGE_KEY,JSON.stringify({
+      version:1,
+      saved_at:new Date().toISOString(),
+      messages:getSavedChatMessages(),
+      state:AI_STATE,
+      flights:Array.isArray(FLIGHTS_DB)?FLIGHTS_DB:[],
+      nearby_airports:Array.isArray(AI_NEARBY_AIRPORTS)?AI_NEARBY_AIRPORTS:[],
+      last_search_fingerprint:LAST_AI_SEARCH_FINGERPRINT
+    }));
+  }catch(err){
+    console.warn('Could not save SkyOpt session:',err);
+  }
+}
+
+function restoreSkyOptSession(){
+  try{
+    const raw=localStorage.getItem(SKYOPT_CHAT_STORAGE_KEY);
+    if(!raw)return false;
+    const saved=JSON.parse(raw);
+    if(!saved||saved.version!==1)return false;
+
+    if(saved.state&&typeof saved.state==='object'){
+      AI_STATE={...AI_STATE,...saved.state};
+    }
+    if(Array.isArray(saved.flights))FLIGHTS_DB=saved.flights;
+    if(Array.isArray(saved.nearby_airports))AI_NEARBY_AIRPORTS=saved.nearby_airports;
+    LAST_AI_SEARCH_FINGERPRINT=saved.last_search_fingerprint||null;
+
+    const log=document.getElementById('aiChatLog');
+    if(log&&Array.isArray(saved.messages)&&saved.messages.length){
+      log.innerHTML='';
+      saved.messages.forEach(m=>{
+        const d=document.createElement('div');
+        d.className='ai-msg '+(m.who==='user'?'user':'bot');
+        d.textContent=m.text||'';
+        log.appendChild(d);
+      });
+      log.scrollTop=log.scrollHeight;
+    }
+
+    // Restore ranked results without making a network/API request.
+    if(Array.isArray(FLIGHTS_DB)&&FLIGHTS_DB.length){
+      const ranked=calcScores(FLIGHTS_DB).sort((a,b)=>b.score-a.score);
+      renderFlights(ranked);
+      updateStats(ranked);
+      updateInsight(ranked);
+    }
+    updateAiConstraintNote();
+    return true;
+  }catch(err){
+    console.warn('Could not restore SkyOpt session:',err);
+    return false;
+  }
+}
+
+function clearSkyOptChat(){
+  if(!window.confirm('Delete this saved SkyOpt IQ conversation and start a new trip?'))return;
+
+  localStorage.removeItem(SKYOPT_CHAT_STORAGE_KEY);
+  AI_STATE={
+    origin_text:null,origin_zip:null,destination_city:null,destination_country:null,destination_region:null,
+    destination_preferences:[],date_start:null,date_end:null,budget_usd:null,budget_is_per_person:null,
+    passengers:1,cabin:'economy',max_stops:null,checked_bags:null,airport_radius_miles:null
+  };
+  AI_NEARBY_AIRPORTS=[];
+  LAST_AI_SEARCH_FINGERPRINT=null;
+  FLIGHTS_DB=[];
+
+  const log=document.getElementById('aiChatLog');
+  if(log){
+    log.innerHTML='';
+    const d=document.createElement('div');
+    d.className='ai-msg bot';
+    d.textContent=SKYOPT_DEFAULT_MESSAGE;
+    log.appendChild(d);
+  }
+
+  const input=document.getElementById('aiPrompt');
+  if(input)input.value='';
+  updateAiConstraintNote();
+
+  const results=document.getElementById('flightResults');
+  if(results)results.innerHTML='';
+}
+
 function addAiMessage(text,who='bot'){
   const log=document.getElementById('aiChatLog');const d=document.createElement('div');d.className='ai-msg '+who;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;
+  saveSkyOptSession();
 }
 function useAiExample(btn){document.getElementById('aiPrompt').value=btn.textContent;document.getElementById('aiPrompt').focus();}
 function aiPromptKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runAiSearch();}}
@@ -1496,7 +1600,7 @@ async function callSkyOptAI(message){
   const res=await fetch(`${BACKEND_URL}/api/v1/ai/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,state:AI_STATE})});
   let data={};try{data=await res.json();}catch(_){ }
   if(!res.ok)throw new Error(data.detail||`AI request failed (${res.status})`);
-  AI_STATE=data.state||AI_STATE;updateAiConstraintNote();return data;
+  AI_STATE=data.state||AI_STATE;updateAiConstraintNote();saveSkyOptSession();return data;
 }
 async function tryConcreteFlightSearch(){
   if(!AI_STATE.date_start)return false;
@@ -1536,6 +1640,7 @@ async function tryConcreteFlightSearch(){
     const original=raw[i]||{};
     return {...f,id:i+1,originIata:original.origin_iata,destinationIata:original.destination_iata,destinationCity:original.destination_city};
   });
+  saveSkyOptSession();
 
   if(!FLIGHTS_DB.length){
     addAiMessage('I understood the trip, but I did not find flights that match the current constraints. Try changing the dates, budget, stops, or destination preference.');
@@ -1749,6 +1854,7 @@ renderTrips();
 renderAnalytics();
 
 handleTripTypeChange();
+restoreSkyOptSession();
 </script>
 </body>
 </html>
