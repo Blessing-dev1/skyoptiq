@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>SkyOpt IQ — Flight Search + AI Trip Optimizer</title>
+<title>SkyBas — Flight Search + AI Trip Optimizer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -399,11 +399,11 @@ canvas{display:block;}
     </div>
   </section>
 
-  <section class="ai-search-wrap" aria-label="SkyOpt AI travel search">
+  <section class="ai-search-wrap" aria-label="SkyBas AI travel search">
     <div class="ai-search-card">
       <div class="ai-search-head">
         <div>
-          <div class="ai-search-title"><span class="ai-badge">AI</span> Ask SkyOpt IQ</div>
+          <div class="ai-search-title"><span class="ai-badge">AI</span> Ask SkyBas</div>
           <div class="ai-search-sub">Search flights in plain language.</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
@@ -529,7 +529,7 @@ canvas{display:block;}
 
 
 <div id="bookingModal" class="booking-modal" aria-hidden="true"><div class="booking-backdrop" onclick="closeBookingModal()"></div><div class="booking-panel">
-<div class="booking-head"><h2>SkyOpt IQ Checkout <span style="font-size:11px;color:var(--green);font-family:'Space Mono',monospace">DUFFEL TEST MODE</span></h2><button class="flight-modal-close" onclick="closeBookingModal()">✕</button></div>
+<div class="booking-head"><h2>SkyBas Checkout <span style="font-size:11px;color:var(--green);font-family:'Space Mono',monospace">DUFFEL TEST MODE</span></h2><button class="flight-modal-close" onclick="closeBookingModal()">✕</button></div>
 <div class="booking-body" id="bookingBody"></div></div></div>
 
 <div id="skyopt-toast" style="opacity:0;">Trip saved!</div>
@@ -562,7 +562,7 @@ canvas{display:block;}
     </div>
   </div>
   <div class="footer-bottom">
-    <span>© 2026 SkyOpt IQ</span>
+    <span>© 2026 SkyBas</span>
     <span>Built by Blessing Sithole</span>
   </div>
 </footer>
@@ -1643,7 +1643,7 @@ function restoreSkyOptSession(){
 }
 
 function clearSkyOptChat(){
-  if(!window.confirm('Delete this saved SkyOpt IQ conversation and start a new trip?'))return;
+  if(!window.confirm('Delete this saved SkyBas conversation and start a new trip?'))return;
 
   localStorage.removeItem(SKYOPT_CHAT_STORAGE_KEY);
   AI_STATE={
@@ -1692,7 +1692,7 @@ function updateAiConstraintNote(){
   if(AI_STATE.destination_city)parts.push(`Destination: ${AI_STATE.destination_city}`); else if(AI_STATE.destination_region)parts.push(`Destination: ${[...(AI_STATE.destination_preferences||[]),AI_STATE.destination_region].join(' ')}`);
   if(AI_STATE.date_start)parts.push(`Dates: ${AI_STATE.date_start}${AI_STATE.date_end?' – '+AI_STATE.date_end:''}`);
   if(AI_STATE.budget_usd)parts.push(`Budget: $${AI_STATE.budget_usd}`);
-  document.getElementById('aiConstraintNote').textContent=parts.length?parts.join(' · '):'Tell SkyOpt IQ what kind of trip you want. It will ask only for missing details.';
+  document.getElementById('aiConstraintNote').textContent=parts.length?parts.join(' · '):'Tell SkyBas what kind of trip you want. It will ask only for missing details.';
 }
 async function callSkyOptAI(message){
   const res=await fetch(`${BACKEND_URL}/api/v1/ai/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,state:AI_STATE})});
@@ -1759,7 +1759,7 @@ async function tryConcreteFlightSearch(){
   const originLabel=AI_STATE.origin_text||AI_STATE.origin_zip||best.originIata;
   const destLabel=AI_STATE.destination_city||AI_STATE.destination_region||best.destinationCity||best.destinationIata;
   document.getElementById('routeTitle').textContent=`${originLabel} → ${destLabel}`;
-  document.getElementById('resultsMetaText').textContent=`SkyOpt IQ searched ${(data.searched_pairs||[]).length} route combination${(data.searched_pairs||[]).length===1?'':'s'}`;
+  document.getElementById('resultsMetaText').textContent=`SkyBas searched ${(data.searched_pairs||[]).length} route combination${(data.searched_pairs||[]).length===1?'':'s'}`;
 
   addAiMessage(`${data.message||'Search complete.'} I found ${ranked.length} matching option${ranked.length===1?'':'s'} and ranked them below. The current top result is ${best.originIata||''} → ${best.destinationIata||''} on ${best.airline} for $${best.price}.`);
   document.getElementById('flightResults')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1790,7 +1790,7 @@ function buildSimplePdf(lines){
   const maxLines=44;
   const pages=[];
   for(let i=0;i<lines.length;i+=maxLines)pages.push(lines.slice(i,i+maxLines));
-  if(!pages.length)pages.push(['SkyOpt IQ Trip Summary']);
+  if(!pages.length)pages.push(['SkyBas Trip Summary']);
 
   const objects=[];
   const add=obj=>{objects.push(obj);return objects.length;};
@@ -1847,7 +1847,7 @@ function downloadCurrentTripPdf(){
     : 'Not specified';
 
   const lines=[
-    'SkyOpt IQ - Flight Search Summary',
+    'SkyBas - Flight Search Summary',
     '',
     `Origin: ${origin}`,
     `Destination: ${destination}`,
@@ -1881,7 +1881,7 @@ function downloadCurrentTripPdf(){
   const a=document.createElement('a');
   const destSlug=String(destination).replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')||'Trip';
   a.href=url;
-  a.download=`SkyOpt-IQ-${destSlug}-Trip-Summary.pdf`;
+  a.download=`SkyBas-${destSlug}-Trip-Summary.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1926,7 +1926,7 @@ async function runAiSearch(){
     await tryConcreteFlightSearch();
 
   }catch(err){
-    console.error('SkyOpt IQ error:',err);
+    console.error('SkyBas error:',err);
 
     let message=err?.message||'Something went wrong.';
 
@@ -1935,14 +1935,14 @@ async function runAiSearch(){
       message.includes('credit_balance_exhausted')||
       message.includes('no credits remaining')
     ){
-      message='SkyOpt IQ is temporarily unavailable because the AI service has reached its usage limit.';
+      message='SkyBas is temporarily unavailable because the AI service has reached its usage limit.';
     }else if(message.includes('OPENAI_API_KEY is missing')){
-      message="SkyOpt IQ isn't configured yet. The backend is missing its OpenAI API key.";
+      message="SkyBas isn't configured yet. The backend is missing its OpenAI API key.";
     }else if(message.includes('404')){
-      message="SkyOpt IQ's AI endpoint isn't deployed on the backend yet.";
+      message="SkyBas's AI endpoint isn't deployed on the backend yet.";
     }
 
-    addAiMessage(`SkyOpt IQ couldn't complete that request: ${message}`);
+    addAiMessage(`SkyBas couldn't complete that request: ${message}`);
   }finally{
     btn.disabled=false;
     btn.textContent='Send';
