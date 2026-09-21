@@ -388,23 +388,23 @@ canvas{display:block;}
       <div class="ai-search-head">
         <div>
           <div class="ai-search-title"><span class="ai-badge">AI</span> Ask SkyOpt IQ</div>
-          <div class="ai-search-sub">Describe the trip you want in plain language. AI Search works alongside the normal Flight Search above.</div>
+          <div class="ai-search-sub">Describe the trip you want in plain language. Describe your trip naturally. SkyOpt IQ will ask for anything missing, then search the same live flight engine used above.</div>
         </div>
-        <div class="ai-search-sub">Search → understand constraints → rank results</div>
+        <div class="ai-search-sub">Chat → understand trip → search flights → rank results</div>
       </div>
       <div class="ai-chat-log" id="aiChatLog">
-        <div class="ai-msg bot">Tell me what you need. Example: “Find me a flight from Boston to Harare under $1,500, max 2 stops, two checked bags, and avoid overnight layovers.”</div>
+        <div class="ai-msg bot">Tell me where and roughly when you want to travel. You do not need to know an airport. Example: “I want to travel from USA to Barcelona between Dec 23 and Dec 31.”</div>
       </div>
       <div class="ai-chips">
-        <button class="ai-chip" onclick="useAiExample(this)">Cheapest nonstop BOS to LAX</button>
-        <button class="ai-chip" onclick="useAiExample(this)">Under $1,500 · max 2 stops</button>
-        <button class="ai-chip" onclick="useAiExample(this)">Avoid overnight layovers</button>
+        <button class="ai-chip" onclick="useAiExample(this)">USA to Barcelona Dec 23–31</button>
+        <button class="ai-chip" onclick="useAiExample(this)">I live near ZIP 03431</button>
+        <button class="ai-chip" onclick="useAiExample(this)">I can drive up to 100 miles</button>
       </div>
       <div class="ai-compose">
         <textarea id="aiPrompt" placeholder="Ask SkyOpt IQ to find and optimize your trip…" onkeydown="aiPromptKey(event)"></textarea>
-        <button class="ai-send" id="aiSendBtn" onclick="runAiSearch()">Search with AI</button>
+        <button class="ai-send" id="aiSendBtn" onclick="runAiSearch()">Send</button>
       </div>
-      <div class="ai-constraint-note" id="aiConstraintNote">AI search uses your existing flight-search backend; advanced provider-specific trip-cost optimization can be added server-side next.</div>
+      <div class="ai-constraint-note" id="aiConstraintNote">Tell SkyOpt IQ what you want. You do not need to know airport codes.</div>
     </div>
   </section>
 
@@ -1419,74 +1419,102 @@ function showToast(msg){
 
 
 let AI_CONSTRAINTS={budget:Infinity,maxHours:Infinity,maxStops:99,bags:0,bagCost:40,ground:0,timeValue:0,avoidOvernight:false};
+let AI_STATE={
+  origin_text:null,origin_zip:null,destination_city:null,destination_country:null,destination_region:null,
+  destination_preferences:[],date_start:null,date_end:null,budget_usd:null,budget_is_per_person:null,
+  passengers:null,cabin:null,max_stops:null,checked_bags:null,airport_radius_miles:null
+};
+let AI_NEARBY_AIRPORTS=[];
+const AIRPORT_COORDS={
+ JFK:[40.6413,-73.7781],LGA:[40.7769,-73.8740],EWR:[40.6895,-74.1745],LAX:[33.9416,-118.4085],ORD:[41.9742,-87.9073],MDW:[41.7868,-87.7522],ATL:[33.6407,-84.4277],DFW:[32.8998,-97.0403],DEN:[39.8561,-104.6737],SFO:[37.6213,-122.3790],SEA:[47.4502,-122.3088],MIA:[25.7959,-80.2870],BOS:[42.3656,-71.0096],IAD:[38.9531,-77.4565],DCA:[38.8512,-77.0402],LAS:[36.0840,-115.1537],PHX:[33.4342,-112.0116],MSP:[44.8848,-93.2223],DTW:[42.2162,-83.3554],CLT:[35.2140,-80.9431],MCO:[28.4312,-81.3081],IAH:[29.9902,-95.3368],HOU:[29.6454,-95.2789],SAN:[32.7338,-117.1933],TPA:[27.9755,-82.5332],PDX:[45.5898,-122.5951],SLC:[40.7899,-111.9791],AUS:[30.1975,-97.6664],BNA:[36.1263,-86.6774],MCI:[39.2976,-94.7139],PHL:[39.8744,-75.2424],BWI:[39.1774,-76.6684],BDL:[41.9389,-72.6832],ALB:[42.7483,-73.8017],BUF:[42.9405,-78.7322],PIT:[40.4915,-80.2329],RDU:[35.8801,-78.7880],RIC:[37.5052,-77.3197],CLE:[41.4117,-81.8498],CMH:[39.9980,-82.8919],CVG:[39.0488,-84.6678],FLL:[26.0742,-80.1506],JAX:[30.4941,-81.6879],MSY:[29.9934,-90.2580],STL:[38.7487,-90.3700],CHS:[32.8986,-80.0405],MEM:[35.0424,-89.9767],SJC:[37.3639,-121.9289],OAK:[37.7126,-122.2197],SMF:[38.6954,-121.5908],SNA:[33.6757,-117.8682],SAT:[29.5337,-98.4698],ABQ:[35.0402,-106.6090],ANC:[61.1743,-149.9985],MHT:[42.9326,-71.4357]
+};
 function addAiMessage(text,who='bot'){
-  const log=document.getElementById('aiChatLog');
-  const d=document.createElement('div');d.className='ai-msg '+who;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;
+  const log=document.getElementById('aiChatLog');const d=document.createElement('div');d.className='ai-msg '+who;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;
 }
 function useAiExample(btn){document.getElementById('aiPrompt').value=btn.textContent;document.getElementById('aiPrompt').focus();}
 function aiPromptKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runAiSearch();}}
-function airportFromText(text){
-  const q=text.toLowerCase();
-  const codeMatches=[...text.toUpperCase().matchAll(/\b[A-Z]{3}\b/g)].map(m=>m[0]).filter(c=>AIRPORTS.some(a=>a.iata===c));
-  if(codeMatches.length>=2)return codeMatches.slice(0,2);
-  const hits=AIRPORTS.map(a=>({a,pos:Math.min(...[a.city,a.name,...a.aliases].map(v=>{const i=q.indexOf(String(v).toLowerCase());return i<0?1e9:i;}))})).filter(x=>x.pos<1e9).sort((a,b)=>a.pos-b.pos);
-  const uniq=[];for(const h of hits){if(!uniq.some(x=>x.iata===h.a.iata))uniq.push(h.a);if(uniq.length===2)break;}
-  return uniq.map(a=>a.iata);
+function haversineMiles(a,b){const R=3958.8,toRad=x=>x*Math.PI/180,dLat=toRad(b[0]-a[0]),dLon=toRad(b[1]-a[1]);const h=Math.sin(dLat/2)**2+Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+function nearbyAirports(lat,lon,radius){const origin=[lat,lon];return Object.entries(AIRPORT_COORDS).map(([iata,coords])=>{const a=AIRPORTS.find(x=>x.iata===iata);return a?{...a,miles:Math.round(haversineMiles(origin,coords))}:null;}).filter(Boolean).filter(a=>a.miles<=radius).sort((a,b)=>a.miles-b.miles).slice(0,6);}
+async function resolveZip(zip){const r=await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`);if(!r.ok)throw new Error('ZIP code not found');const d=await r.json(),p=d.places&&d.places[0];if(!p)throw new Error('ZIP code not found');return {city:p['place name'],state:p['state abbreviation'],lat:+p.latitude,lon:+p.longitude};}
+function destinationAirportFromState(){
+  const q=(AI_STATE.destination_city||'').toLowerCase();
+  if(!q)return null;
+  return AIRPORTS.find(a=>a.city.toLowerCase()===q||a.name.toLowerCase().includes(q)||(a.aliases||[]).some(x=>String(x).toLowerCase()===q))||null;
 }
-function parseAiRequest(text){
-  const q=text.toLowerCase(), c={...AI_CONSTRAINTS};
-  const money=text.match(/(?:under|max(?:imum)?|budget(?: of)?|less than)\s*\$?\s*([\d,]+)/i)||text.match(/\$\s*([\d,]+)/);
-  if(money)c.budget=+money[1].replace(/,/g,'');
-  const stops=text.match(/(?:max(?:imum)?|up to|no more than)\s*(\d+)\s*stops?/i); if(stops)c.maxStops=+stops[1];
-  if(/non[- ]?stop|direct flight/.test(q))c.maxStops=0;
-  const hours=text.match(/(?:max(?:imum)?|under|less than|no more than)\s*(\d+(?:\.\d+)?)\s*hours?/i); if(hours)c.maxHours=+hours[1];
-  const bags=text.match(/(\d+)\s*(?:checked\s*)?bags?/i); if(bags)c.bags=+bags[1];
-  const tv=text.match(/\$\s*(\d+(?:\.\d+)?)\s*(?:\/|per)\s*hour/i); if(tv)c.timeValue=+tv[1];
-  if(/avoid.*overnight|no overnight/.test(q))c.avoidOvernight=true;
-  if(/cheapest|lowest price|budget/.test(q)){document.getElementById('wPrice').value=70;document.getElementById('wStops').value=15;document.getElementById('wDuration').value=15;}
-  if(/fastest|shortest/.test(q)){document.getElementById('wPrice').value=20;document.getElementById('wStops').value=20;document.getElementById('wDuration').value=60;}
-  ['wPrice','wStops','wDuration'].forEach(updateWeight);
-  const ap=airportFromText(text);
-  const iso=text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-  const us=text.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
-  let date=null;if(iso)date=iso[1];else if(us)date=`${us[3]}-${String(us[1]).padStart(2,'0')}-${String(us[2]).padStart(2,'0')}`;
-  return {constraints:c,airports:ap,date};
+function updateAiConstraintNote(){
+  const parts=[];
+  if(AI_STATE.origin_text)parts.push(`Origin: ${AI_STATE.origin_text}`); else if(AI_STATE.origin_zip)parts.push(`ZIP: ${AI_STATE.origin_zip}`);
+  if(AI_STATE.destination_city)parts.push(`Destination: ${AI_STATE.destination_city}`); else if(AI_STATE.destination_region)parts.push(`Destination: ${[...(AI_STATE.destination_preferences||[]),AI_STATE.destination_region].join(' ')}`);
+  if(AI_STATE.date_start)parts.push(`Dates: ${AI_STATE.date_start}${AI_STATE.date_end?' – '+AI_STATE.date_end:''}`);
+  if(AI_STATE.budget_usd)parts.push(`Budget: $${AI_STATE.budget_usd}`);
+  document.getElementById('aiConstraintNote').textContent=parts.length?parts.join(' · '):'Tell SkyOpt IQ what kind of trip you want. It will ask only for missing details.';
 }
-function applyAiRanking(){
-  if(!FLIGHTS_DB.length)return [];
-  const c=AI_CONSTRAINTS;
-  return calcScores(FLIGHTS_DB).map(f=>{
-    const overnight=(f.layovers||[]).some(l=>l.overnight);
-    const trueCost=f.price+(c.bags*c.bagCost)+c.ground;
-    const effectiveCost=trueCost+(f.duration/60)*c.timeValue;
-    const feasible=trueCost<=c.budget && f.duration/60<=c.maxHours && f.stops<=c.maxStops && (!c.avoidOvernight||!overnight);
-    return {...f,trueCost,effectiveCost,overnight,feasible};
-  }).filter(f=>f.feasible).sort((a,b)=>a.effectiveCost-b.effectiveCost || b.score-a.score);
+async function callSkyOptAI(message){
+  const res=await fetch(`${BACKEND_URL}/api/v1/ai/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,state:AI_STATE})});
+  let data={};try{data=await res.json();}catch(_){ }
+  if(!res.ok)throw new Error(data.detail||`AI request failed (${res.status})`);
+  AI_STATE=data.state||AI_STATE;updateAiConstraintNote();return data;
+}
+async function tryConcreteFlightSearch(){
+  if(!AI_STATE.date_start)return false;
+  if(!(AI_STATE.origin_text||AI_STATE.origin_zip))return false;
+  if(!(AI_STATE.destination_city||AI_STATE.destination_country||AI_STATE.destination_region))return false;
+
+  const btn=document.getElementById('aiSendBtn');
+  btn.textContent='Searching flights…';
+  addAiMessage('I have enough information. I’m checking real flight options now…');
+
+  const res=await fetch(`${BACKEND_URL}/api/v1/ai/search`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({state:AI_STATE})
+  });
+  let data={};
+  try{data=await res.json();}catch(_){ }
+  if(!res.ok)throw new Error(data.detail||`AI flight search failed (${res.status})`);
+
+  const raw=data.flights||[];
+  FLIGHTS_DB=normalizeFlights(raw).map((f,i)=>{
+    const original=raw[i]||{};
+    return {...f,id:i+1,originIata:original.origin_iata,destinationIata:original.destination_iata,destinationCity:original.destination_city};
+  });
+
+  if(!FLIGHTS_DB.length){
+    addAiMessage('I understood the trip, but I did not find flights that match the current constraints. Try changing the dates, budget, stops, or destination preference.');
+    return true;
+  }
+
+  const ranked=calcScores(FLIGHTS_DB).sort((a,b)=>b.score-a.score);
+  renderFlights(ranked);updateStats(ranked);updateInsight(ranked);
+
+  const best=ranked[0];
+  if(best.originIata && AIRPORTS.some(a=>a.iata===best.originIata)) selectApt('from',best.originIata);
+  if(best.destinationIata && AIRPORTS.some(a=>a.iata===best.destinationIata)) selectApt('to',best.destinationIata);
+  if(AI_STATE.date_start)document.getElementById('depdate').value=AI_STATE.date_start;
+  const roundTrip=!!AI_STATE.date_end;
+  document.getElementById('tripType').value=roundTrip?'roundtrip':'oneway';handleTripTypeChange();
+  if(roundTrip)document.getElementById('retdate').value=AI_STATE.date_end;
+
+  const originLabel=AI_STATE.origin_text||AI_STATE.origin_zip||best.originIata;
+  const destLabel=AI_STATE.destination_city||AI_STATE.destination_region||best.destinationCity||best.destinationIata;
+  document.getElementById('routeTitle').textContent=`${originLabel} → ${destLabel}`;
+  document.getElementById('resultsMetaText').textContent=`SkyOpt IQ searched ${(data.searched_pairs||[]).length} route combination${(data.searched_pairs||[]).length===1?'':'s'}`;
+
+  addAiMessage(`${data.message||'Search complete.'} I found ${ranked.length} matching option${ranked.length===1?'':'s'} and ranked them below. The current top result is ${best.originIata||''} → ${best.destinationIata||''} on ${best.airline} for $${best.price}.`);
+  document.getElementById('resultsGrid')?.scrollIntoView({behavior:'smooth',block:'start'});
+  return true;
 }
 async function runAiSearch(){
-  const input=document.getElementById('aiPrompt'),btn=document.getElementById('aiSendBtn');
-  const text=input.value.trim();if(!text)return;
-  addAiMessage(text,'user');input.value='';btn.disabled=true;btn.textContent='Searching…';
+  const input=document.getElementById('aiPrompt'),btn=document.getElementById('aiSendBtn');const message=input.value.trim();if(!message)return;addAiMessage(message,'user');input.value='';btn.disabled=true;btn.textContent='Thinking…';
   try{
-    const parsed=parseAiRequest(text);AI_CONSTRAINTS=parsed.constraints;
-    if(parsed.airports[0])selectApt('from',parsed.airports[0]);
-    if(parsed.airports[1])selectApt('to',parsed.airports[1]);
-    if(parsed.date)document.getElementById('depdate').value=parsed.date;
-    const from=getIATA('from'),to=getIATA('to');
-    if(!from||!to){addAiMessage('I understood your preferences, but I still need both airports. Include a route such as “BOS to HRE” or choose From and To above.');return;}
-    addAiMessage(`I understood ${from} → ${to}${isFinite(AI_CONSTRAINTS.budget)?`, budget up to $${AI_CONSTRAINTS.budget}`:''}${AI_CONSTRAINTS.maxStops<99?`, max ${AI_CONSTRAINTS.maxStops} stop${AI_CONSTRAINTS.maxStops===1?'':'s'}`:''}${AI_CONSTRAINTS.avoidOvernight?', no overnight layovers':''}. I’m searching the live flight sources now.`);
-    await startSearch();
-    const ranked=applyAiRanking();
-    if(!ranked.length){addAiMessage('I found flight data, but none of the current results satisfy all of those constraints. Try increasing the budget, allowing another stop, or relaxing the duration limit.');return;}
-    renderFlights(ranked);updateStats(ranked);
-    const b=ranked[0];
-    const reason=[];if(isFinite(AI_CONSTRAINTS.budget))reason.push(`within your $${AI_CONSTRAINTS.budget} budget`);if(AI_CONSTRAINTS.maxStops<99)reason.push(`${b.stops} stop${b.stops===1?'':'s'}`);if(AI_CONSTRAINTS.avoidOvernight)reason.push('no overnight layover');
-    addAiMessage(`Best match from the current results: ${b.airline} at $${b.price}, ${fmtDur(b.duration)}, ${b.stops===0?'nonstop':b.stops+' stop'+(b.stops>1?'s':'')}. ${reason.length?'It is '+reason.join(', ')+'. ':''}${AI_CONSTRAINTS.bags?`Estimated cost after ${AI_CONSTRAINTS.bags} checked bag${AI_CONSTRAINTS.bags>1?'s':''}: $${Math.round(b.trueCost)}. `:''}I ranked the matching results below.`);
-    document.getElementById('aiConstraintNote').textContent=`Active AI constraints: ${isFinite(AI_CONSTRAINTS.budget)?'$'+AI_CONSTRAINTS.budget+' max budget · ':''}${AI_CONSTRAINTS.maxStops<99?AI_CONSTRAINTS.maxStops+' max stops · ':''}${AI_CONSTRAINTS.avoidOvernight?'avoid overnight · ':''}${AI_CONSTRAINTS.bags?AI_CONSTRAINTS.bags+' checked bag(s) · ':''}ranking applied to current results.`;
-  }catch(err){console.error(err);addAiMessage('The AI search could not complete that request. Please check the route/date and try again.');}
-  finally{btn.disabled=false;btn.textContent='Search with AI';}
-}
+    const data=await callSkyOptAI(message);addAiMessage(data.message||'Got it.');
+    if(data.ready_to_search){
+      const searched=await tryConcreteFlightSearch();
 
+    }
+  }catch(err){console.error(err);addAiMessage(`I couldn't reach SkyOpt IQ: ${err.message}. Check that OPENAI_API_KEY is set on the backend and that /api/v1/ai/chat is deployed.`);}
+  finally{btn.disabled=false;btn.textContent='Send';}
+}
 renderTrips();
 renderAnalytics();
 
