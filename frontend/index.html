@@ -1446,6 +1446,28 @@ let AI_STATE={
   passengers:1,cabin:'economy',max_stops:null,checked_bags:null,airport_radius_miles:null
 };
 let AI_NEARBY_AIRPORTS=[];
+let LAST_AI_SEARCH_FINGERPRINT=null;
+
+function aiSearchFingerprint(){
+  const s=AI_STATE||{};
+  return JSON.stringify({
+    origin_text:s.origin_text||null,
+    origin_zip:s.origin_zip||null,
+    destination_city:s.destination_city||null,
+    destination_country:s.destination_country||null,
+    destination_region:s.destination_region||null,
+    destination_preferences:Array.isArray(s.destination_preferences)?s.destination_preferences:[],
+    date_start:s.date_start||null,
+    date_end:s.date_end||null,
+    budget_usd:s.budget_usd??null,
+    budget_is_per_person:s.budget_is_per_person??null,
+    passengers:s.passengers??1,
+    cabin:s.cabin||'economy',
+    max_stops:s.max_stops??null,
+    checked_bags:s.checked_bags??null,
+    airport_radius_miles:s.airport_radius_miles??null
+  });
+}
 const AIRPORT_COORDS={
  JFK:[40.6413,-73.7781],LGA:[40.7769,-73.8740],EWR:[40.6895,-74.1745],LAX:[33.9416,-118.4085],ORD:[41.9742,-87.9073],MDW:[41.7868,-87.7522],ATL:[33.6407,-84.4277],DFW:[32.8998,-97.0403],DEN:[39.8561,-104.6737],SFO:[37.6213,-122.3790],SEA:[47.4502,-122.3088],MIA:[25.7959,-80.2870],BOS:[42.3656,-71.0096],IAD:[38.9531,-77.4565],DCA:[38.8512,-77.0402],LAS:[36.0840,-115.1537],PHX:[33.4342,-112.0116],MSP:[44.8848,-93.2223],DTW:[42.2162,-83.3554],CLT:[35.2140,-80.9431],MCO:[28.4312,-81.3081],IAH:[29.9902,-95.3368],HOU:[29.6454,-95.2789],SAN:[32.7338,-117.1933],TPA:[27.9755,-82.5332],PDX:[45.5898,-122.5951],SLC:[40.7899,-111.9791],AUS:[30.1975,-97.6664],BNA:[36.1263,-86.6774],MCI:[39.2976,-94.7139],PHL:[39.8744,-75.2424],BWI:[39.1774,-76.6684],BDL:[41.9389,-72.6832],ALB:[42.7483,-73.8017],BUF:[42.9405,-78.7322],PIT:[40.4915,-80.2329],RDU:[35.8801,-78.7880],RIC:[37.5052,-77.3197],CLE:[41.4117,-81.8498],CMH:[39.9980,-82.8919],CVG:[39.0488,-84.6678],FLL:[26.0742,-80.1506],JAX:[30.4941,-81.6879],MSY:[29.9934,-90.2580],STL:[38.7487,-90.3700],CHS:[32.8986,-80.0405],MEM:[35.0424,-89.9767],SJC:[37.3639,-121.9289],OAK:[37.7126,-122.2197],SMF:[38.6954,-121.5908],SNA:[33.6757,-117.8682],SAT:[29.5337,-98.4698],ABQ:[35.0402,-106.6090],ANC:[61.1743,-149.9985],MHT:[42.9326,-71.4357]
 };
@@ -1481,6 +1503,19 @@ async function tryConcreteFlightSearch(){
   if(!(AI_STATE.origin_text||AI_STATE.origin_zip))return false;
   if(!(AI_STATE.destination_city||AI_STATE.destination_country||AI_STATE.destination_region))return false;
 
+  // A stated budget must have a known scope before searching.
+  if(AI_STATE.budget_usd!=null && AI_STATE.budget_is_per_person==null){
+    return false;
+  }
+
+  // Do not hit SerpApi again for acknowledgements such as "yes" or "okey"
+  // when none of the actual search constraints changed.
+  const fingerprint=aiSearchFingerprint();
+  if(fingerprint===LAST_AI_SEARCH_FINGERPRINT){
+    addAiMessage('Your flight-search criteria have not changed, so I kept the current ranked results instead of running the same search again.');
+    return true;
+  }
+
   const btn=document.getElementById('aiSendBtn');
   btn.textContent='Searching flights…';
   addAiMessage('I have enough information. I’m checking real flight options now…');
@@ -1493,6 +1528,8 @@ async function tryConcreteFlightSearch(){
   let data={};
   try{data=await res.json();}catch(_){ }
   if(!res.ok)throw new Error(data.detail||`AI flight search failed (${res.status})`);
+
+  LAST_AI_SEARCH_FINGERPRINT=fingerprint;
 
   const raw=data.flights||[];
   FLIGHTS_DB=normalizeFlights(raw).map((f,i)=>{
