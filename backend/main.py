@@ -83,10 +83,12 @@ class AISearchRequest(BaseModel):
     state: TripState
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
-    return {"message": "SkyOpt IQ backend is running", "version": "4.1.0"}
-
+    return {
+        "message": "SkyOpt IQ backend is running",
+        "version": "4.1.0"
+    }
 
 @app.get("/api/v1/health")
 def health():
