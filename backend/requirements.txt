@@ -17,3 +17,11 @@ typing_extensions==4.15.0
 uvicorn==0.42.0
 serpapi
 openai
+fastapi
+uvicorn
+pydantic
+python-dotenv
+httpx
+openai
+serpapi
+psycopg[binary]
