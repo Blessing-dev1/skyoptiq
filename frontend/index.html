@@ -912,6 +912,27 @@ function pickApt(f,i){
   p.textContent=a.iata;p.classList.add('on');
   dd.classList.remove('open');
 }
+function selectApt(f,iata){
+  const code=String(iata||'').trim().toUpperCase();
+  const a=AIRPORTS.find(x=>x.iata===code);
+  if(!a)return false;
+
+  _sel[f]=a;
+
+  const input=document.getElementById(f);
+  const pill=document.getElementById(f+'-pill');
+  const dd=document.getElementById(f+'-dd');
+
+  if(input)input.value=`${a.city} (${a.iata})`;
+  if(pill){
+    pill.textContent=a.iata;
+    pill.classList.add('on');
+  }
+  if(dd)dd.classList.remove('open');
+
+  return true;
+}
+
 function onAptKey(e,f){
   const dd=document.getElementById(f+'-dd');
   const res=dd._res||[];
@@ -1422,7 +1443,7 @@ let AI_CONSTRAINTS={budget:Infinity,maxHours:Infinity,maxStops:99,bags:0,bagCost
 let AI_STATE={
   origin_text:null,origin_zip:null,destination_city:null,destination_country:null,destination_region:null,
   destination_preferences:[],date_start:null,date_end:null,budget_usd:null,budget_is_per_person:null,
-  passengers:null,cabin:null,max_stops:null,checked_bags:null,airport_radius_miles:null
+  passengers:1,cabin:'economy',max_stops:null,checked_bags:null,airport_radius_miles:null
 };
 let AI_NEARBY_AIRPORTS=[];
 const AIRPORT_COORDS={
@@ -1505,15 +1526,53 @@ async function tryConcreteFlightSearch(){
   return true;
 }
 async function runAiSearch(){
-  const input=document.getElementById('aiPrompt'),btn=document.getElementById('aiSendBtn');const message=input.value.trim();if(!message)return;addAiMessage(message,'user');input.value='';btn.disabled=true;btn.textContent='Thinking…';
-  try{
-    const data=await callSkyOptAI(message);addAiMessage(data.message||'Got it.');
-    if(data.ready_to_search){
-      const searched=await tryConcreteFlightSearch();
+  const input=document.getElementById('aiPrompt');
+  const btn=document.getElementById('aiSendBtn');
+  const message=input.value.trim();
+  if(!message)return;
 
+  addAiMessage(message,'user');
+  input.value='';
+  btn.disabled=true;
+  btn.textContent='Thinking…';
+
+  try{
+    const data=await callSkyOptAI(message);
+
+    if(data.message){
+      addAiMessage(data.message);
     }
-  }catch(err){console.error(err);addAiMessage(`I couldn't reach SkyOpt IQ: ${err.message}. Check that OPENAI_API_KEY is set on the backend and that /api/v1/ai/chat is deployed.`);}
-  finally{btn.disabled=false;btn.textContent='Send';}
+
+    // The backend is the authority on whether enough required trip
+    // information has been collected. If not, show its question and stop.
+    if(!data.ready_to_search){
+      return;
+    }
+
+    await tryConcreteFlightSearch();
+
+  }catch(err){
+    console.error('SkyOpt IQ error:',err);
+
+    let message=err?.message||'Something went wrong.';
+
+    if(
+      message.includes('insufficient_quota')||
+      message.includes('credit_balance_exhausted')||
+      message.includes('no credits remaining')
+    ){
+      message='SkyOpt IQ is temporarily unavailable because the AI service has reached its usage limit.';
+    }else if(message.includes('OPENAI_API_KEY is missing')){
+      message="SkyOpt IQ isn't configured yet. The backend is missing its OpenAI API key.";
+    }else if(message.includes('404')){
+      message="SkyOpt IQ's AI endpoint isn't deployed on the backend yet.";
+    }
+
+    addAiMessage(`SkyOpt IQ couldn't complete that request: ${message}`);
+  }finally{
+    btn.disabled=false;
+    btn.textContent='Send';
+  }
 }
 renderTrips();
 renderAnalytics();
