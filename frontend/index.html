@@ -285,6 +285,9 @@ canvas{display:block;}
 @media(max-width:700px){.hero-search{padding:20px;}.hero-search-inner{flex-direction:column;align-items:stretch;}.hero-search-inner>*{width:100%;}.swap-icon{display:none;}.topbar-center{flex-wrap:wrap;}.detail-grid{grid-template-columns:1fr;}.detail-route{grid-template-columns:1fr;}.detail-arrow{display:none;}}
 @media(max-width:640px){.layout{padding:1rem;}.stats-row{grid-template-columns:1fr 1fr;}.footer-links{grid-template-columns:1fr;}.footer-inner,.footer-bottom{padding-left:20px;padding-right:20px;}}
 
+/* V12 database-backed My Trips */
+.booked-section{margin-bottom:22px}.trip-section-title{font:700 11px 'Space Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:4px 0 12px}.booked-card{border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;background:#fff}.booked-top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.booked-route{font-size:18px;font-weight:700}.booked-meta{font-size:12px;color:var(--text3);margin-top:4px}.booked-status{font:700 10px 'Space Mono',monospace;padding:5px 8px;border-radius:999px;background:var(--green-dim);color:#047857}.booked-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}.booked-k{font:9px 'Space Mono',monospace;text-transform:uppercase;color:var(--text3)}.booked-v{font-weight:700;margin-top:3px;overflow-wrap:anywhere}.booked-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.booked-actions button{border-radius:9px;padding:8px 12px;font-weight:700;cursor:pointer}.booked-primary{border:0;background:var(--boeing-blue);color:white}.booked-secondary{border:1px solid var(--border2);background:white;color:var(--text2)}@media(max-width:700px){.booked-grid{grid-template-columns:1fr 1fr}.booked-top{flex-direction:column}}
+
 /* V11 Duffel transactional checkout */
 .booking-modal{position:fixed;inset:0;z-index:10050;display:none}.booking-modal.open{display:block}
 .booking-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.62);backdrop-filter:blur(3px)}
@@ -401,26 +404,21 @@ canvas{display:block;}
       <div class="ai-search-head">
         <div>
           <div class="ai-search-title"><span class="ai-badge">AI</span> Ask SkyOpt IQ</div>
-          <div class="ai-search-sub">Describe the trip you want in plain language. Describe your trip naturally. SkyOpt IQ will ask for anything missing, then search the same live flight engine used above.</div>
+          <div class="ai-search-sub">Search flights in plain language.</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          <div class="ai-search-sub">Chat → understand trip → search flights → rank results</div>
+          
           <button type="button" onclick="clearSkyOptChat()" title="Delete this saved conversation and start a new trip" style="border:1px solid var(--border,#d9d9d9);background:transparent;border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit">New Trip / Clear Chat</button>
         </div>
       </div>
       <div class="ai-chat-log" id="aiChatLog">
-        <div class="ai-msg bot">Tell me where and roughly when you want to travel. You do not need to know an airport. Example: “I want to travel from USA to Barcelona between Dec 23 and Dec 31.”</div>
-      </div>
-      <div class="ai-chips">
-        <button class="ai-chip" onclick="useAiExample(this)">USA to Barcelona Dec 23–31</button>
-        <button class="ai-chip" onclick="useAiExample(this)">I live near ZIP 03431</button>
-        <button class="ai-chip" onclick="useAiExample(this)">I can drive up to 100 miles</button>
+        
       </div>
       <div class="ai-compose">
-        <textarea id="aiPrompt" placeholder="Ask SkyOpt IQ to find and optimize your trip…" onkeydown="aiPromptKey(event)"></textarea>
+        <textarea id="aiPrompt" placeholder="Where do you want to go?" onkeydown="aiPromptKey(event)"></textarea>
         <button class="ai-send" id="aiSendBtn" onclick="runAiSearch()">Send</button>
       </div>
-      <div class="ai-constraint-note" id="aiConstraintNote">Tell SkyOpt IQ what you want. You do not need to know airport codes.</div>
+      <div class="ai-constraint-note" id="aiConstraintNote"></div>
     </div>
   </section>
 
@@ -595,8 +593,8 @@ function reviewDuffelBooking(){
 async function createDuffelTestOrder(){
  const btn=document.getElementById('testBookBtn');btn.disabled=true;btn.textContent='Creating test booking…';
  try{const r=await fetch(`${BACKEND_URL}/api/v1/duffel/orders/test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offer_id:DUFFEL_BOOKING_OFFER.offer_id,passengers:window.DUFFEL_PENDING_PASSENGERS||[]})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Test booking failed');
- try{const a=JSON.parse(localStorage.getItem('skyopt_duffel_test_orders')||'[]');a.unshift({saved_at:new Date().toISOString(),order_id:d.order_id,booking_reference:d.booking_reference,total_amount:d.total_amount,total_currency:d.total_currency,offer:DUFFEL_BOOKING_OFFER});localStorage.setItem('skyopt_duffel_test_orders',JSON.stringify(a.slice(0,20)))}catch(_){}
- document.getElementById('bookingBody').innerHTML=`<div class="booking-steps"><span class="booking-step">1 Passenger details</span><span class="booking-step">2 Review</span><span class="booking-step">3 Test booking</span><span class="booking-step active">4 Confirmation</span></div><div class="booking-success"><div style="font-size:30px">✓</div><h2>Test booking confirmed</h2><div class="booking-ref">${escHtml(d.booking_reference||'CONFIRMED')}</div><div>Order ${escHtml(d.order_id||'')}</div><div style="margin-top:8px;font-weight:700">${fmtMoney(d.total_amount,d.total_currency)}</div></div>${bookingSummaryHtml(DUFFEL_BOOKING_OFFER)}<div class="booking-alert">Duffel TEST MODE: this is not a real airline ticket.</div><div class="booking-actions"><button class="booking-primary" onclick="closeBookingModal()">Done</button></div>`}
+ try{const a=JSON.parse(localStorage.getItem('skyopt_duffel_test_orders')||'[]');a.unshift({saved_at:new Date().toISOString(),booking_id:d.booking_id,manage_token:d.manage_token,order_id:d.order_id,booking_reference:d.booking_reference,total_amount:d.total_amount,total_currency:d.total_currency,offer:DUFFEL_BOOKING_OFFER});localStorage.setItem('skyopt_duffel_test_orders',JSON.stringify(a.slice(0,20)))}catch(_){}
+ document.getElementById('bookingBody').innerHTML=`<div class="booking-steps"><span class="booking-step">1 Passenger details</span><span class="booking-step">2 Review</span><span class="booking-step">3 Test booking</span><span class="booking-step active">4 Confirmation</span></div><div class="booking-success"><div style="font-size:30px">✓</div><h2>Test booking confirmed</h2><div class="booking-ref">${escHtml(d.booking_reference||'CONFIRMED')}</div><div>Order ${escHtml(d.order_id||'')}</div><div style="margin-top:8px;font-weight:700">${fmtMoney(d.total_amount,d.total_currency)}</div></div>${bookingSummaryHtml(DUFFEL_BOOKING_OFFER)}<div class="booking-alert">Duffel TEST MODE: this is not a real airline ticket.</div><div class="booking-actions"><button class="booking-primary" onclick="closeBookingModal();switchView('trips',document.querySelectorAll('.nav-link')[1])">View My Trips</button></div>`}
  catch(e){btn.disabled=false;btn.textContent='Create test booking';alert(e.message)}
 }
 async function runDuffelTransactionalSearch(){
@@ -1133,7 +1131,7 @@ function switchView(name,btn){
   });
   document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
-  if(name==='trips')renderTrips();
+  if(name==='trips')renderTripsV12();
   if(name==='analytics')renderAnalytics();
 }
 
@@ -1378,6 +1376,41 @@ function saveTrip(id){
   switchView('trips',document.querySelectorAll('.nav-link')[1]);
 }
 function removeTrip(i){savedTrips.splice(i,1);saveTL();renderTrips();renderAnalytics();}
+
+function getBookedTripKeys(){
+  try{return JSON.parse(localStorage.getItem('skyopt_duffel_test_orders')||'[]').filter(x=>x.booking_id&&x.manage_token)}catch(_){return[]}
+}
+function fmtTripDate(v){if(!v)return '—';try{return new Date(v).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}catch(_){return String(v)}}
+async function fetchSkyOptBooking(k,refresh=false){
+  const action=refresh?'/refresh':'';
+  const r=await fetch(`${BACKEND_URL}/api/v1/bookings/${encodeURIComponent(k.booking_id)}${action}?manage_token=${encodeURIComponent(k.manage_token)}`);
+  const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not load booking');return d.booking;
+}
+function bookedTripCard(b,k){
+  const status=String(b.status||'confirmed').toUpperCase();
+  return `<div class="booked-card"><div class="booked-top"><div><div class="booked-route">${escHtml(b.origin_iata||'—')} → ${escHtml(b.destination_iata||'—')}</div><div class="booked-meta">${escHtml(b.airline||'Airline')} · ${Number(b.passenger_count||1)} passenger${Number(b.passenger_count||1)===1?'':'s'}${b.test_mode?' · TEST MODE':''}</div></div><span class="booked-status">${escHtml(status)}</span></div><div class="booked-grid"><div><div class="booked-k">Booking reference</div><div class="booked-v">${escHtml(b.booking_reference||'—')}</div></div><div><div class="booked-k">Departure</div><div class="booked-v">${escHtml(fmtTripDate(b.departing_at))}</div></div><div><div class="booked-k">Total</div><div class="booked-v">${fmtMoney(b.total_amount,b.total_currency)}</div></div><div><div class="booked-k">Order</div><div class="booked-v">${escHtml(b.provider_order_id||'—')}</div></div></div><div class="booked-actions"><button class="booked-primary" onclick="openBookedTrip(${Number(k.booking_id)})">View Booking</button><button class="booked-secondary" onclick="refreshBookedTrip(${Number(k.booking_id)},this)">Refresh Status</button></div></div>`;
+}
+async function renderTripsV12(){
+  const el=document.getElementById('tripsList'),keys=getBookedTripKeys();
+  el.innerHTML='<div class="loading-bar">Loading My Trips…</div>';
+  const results=await Promise.all(keys.map(async k=>{try{return {k,b:await fetchSkyOptBooking(k)}}catch(e){return {k,error:e.message}}}));
+  const booked=results.filter(x=>x.b);
+  let html='<div class="booked-section"><div class="trip-section-title">Booked Trips</div>';
+  html+=booked.length?booked.map(x=>bookedTripCard(x.b,x.k)).join(''):'<div class="trips-empty"><span class="icon">✈</span><strong>No booked trips on this device yet.</strong></div>';
+  html+='</div><div class="trip-section-title">Saved Flights</div>';
+  if(!savedTrips.length)html+='<div class="trips-empty"><strong>No saved flights.</strong></div>';
+  else html+=savedTrips.map((t,i)=>`<div class="flight-card" style="margin-bottom:12px;"><div class="card-inner"><div class="airline-info"><div class="airline-logo">${logoHtml(t)}</div><div><div class="airline-name">${escHtml(t.airline)}</div><div class="flight-code">${escHtml(t.code)}</div><span class="source-badge">Saved</span></div></div><div class="route-visual"><div class="airport-block"><div class="airport-time">${escHtml(t.dep)}</div><div class="airport-code">${escHtml(t.from||'ORG')}</div></div><div class="route-line"><div class="route-duration">${fmtDur(t.duration)}</div><div class="route-track"><span class="route-plane">✈</span></div>${stopLbl(t.stops)}</div><div class="airport-block"><div class="airport-time">${escHtml(t.arr)}</div><div class="airport-code">${escHtml(t.to||'DST')}</div></div></div><div class="score-col"><div class="score-ring ${scCls(t.score||8)}">${t.score||'—'}</div></div><div class="price-col"><div class="price-main">$${escHtml(t.price)}</div><button class="select-btn" onclick="removeTrip(${i})">Remove</button></div></div></div>`).join('');
+  el.innerHTML=html;
+}
+async function refreshBookedTrip(id,btn){
+  const k=getBookedTripKeys().find(x=>Number(x.booking_id)===Number(id));if(!k)return;
+  const old=btn.textContent;btn.disabled=true;btn.textContent='Refreshing…';
+  try{await fetchSkyOptBooking(k,true);showToast('Booking refreshed');await renderTripsV12()}catch(e){alert(e.message);btn.disabled=false;btn.textContent=old}
+}
+async function openBookedTrip(id){
+  const k=getBookedTripKeys().find(x=>Number(x.booking_id)===Number(id));if(!k)return;
+  try{const b=await fetchSkyOptBooking(k);const m=document.getElementById('bookingModal'),body=document.getElementById('bookingBody');m.classList.add('open');m.setAttribute('aria-hidden','false');body.innerHTML=`<div class="booking-success"><h2>${escHtml(String(b.status||'confirmed').toUpperCase())}</h2><div class="booking-ref">${escHtml(b.booking_reference||'—')}</div></div><div class="booking-summary"><div class="booking-summary-grid"><div><div class="booking-k">Airline</div><div class="booking-v">${escHtml(b.airline||'—')}</div></div><div><div class="booking-k">Route</div><div class="booking-v">${escHtml(b.origin_iata||'—')} → ${escHtml(b.destination_iata||'—')}</div></div><div><div class="booking-k">Passengers</div><div class="booking-v">${escHtml(b.passenger_count||1)}</div></div><div><div class="booking-k">Total</div><div class="booking-v">${fmtMoney(b.total_amount,b.total_currency)}</div></div></div></div><div class="detail-block"><div class="detail-block-title">Booking details</div><div><strong>Departure:</strong> ${escHtml(fmtTripDate(b.departing_at))}</div><div><strong>Order:</strong> ${escHtml(b.provider_order_id||'—')}</div></div>${b.test_mode?'<div class="booking-alert">Duffel TEST MODE — this is not a real airline ticket.</div>':''}<div class="booking-actions"><button class="booking-secondary" onclick="closeBookingModal()">Close</button><button class="booking-primary" onclick="refreshBookedTrip(${Number(id)},this);closeBookingModal()">Refresh Status</button></div>`}catch(e){alert(e.message)}
+}
 
 function renderTrips(){
   const el=document.getElementById('tripsList');
@@ -1915,7 +1948,7 @@ async function runAiSearch(){
     btn.textContent='Send';
   }
 }
-renderTrips();
+renderTripsV12();
 renderAnalytics();
 
 handleTripTypeChange();
