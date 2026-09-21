@@ -1,874 +1,1498 @@
-import os
-import json
-from typing import Optional
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SkyOpt IQ — Flight Search + AI Trip Optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --boeing-blue:       #1f6feb;
+  --boeing-blue-hover: #1859bc;
+  --boeing-blue-soft:  rgba(31,111,235,0.14);
+  --boeing-blue-dim:   rgba(31,111,235,0.08);
+  --nav-bg:            #0b1423;
+  --hero-bg:           #081221;
+  --hero-bg-2:         #06101d;
+  --input-bg:          #1b2a44;
+  --input-border:      rgba(148,163,184,0.18);
+  --input-border-focus:rgba(31,111,235,0.55);
+  --bg:       #f4f7fb;
+  --surface:  #ffffff;
+  --surface2: #f8fafc;
+  --surface3: #e9eef5;
+  --border:   #e2e8f0;
+  --border2:  #cbd5e1;
+  --text:     #0f172a;
+  --text2:    #475569;
+  --text3:    #64748b;
+  --white:    #f8fafc;
+  --muted:    #b6c2d9;
+  --muted-2:  #7f8ca7;
+  --green:     #10b981;
+  --green-dim: rgba(16,185,129,0.12);
+  --amber:     #d97706;
+  --amber-dim: rgba(217,119,6,.12);
+  --red:       #dc2626;
+  --red-dim:   rgba(220,38,38,.08);
+  --shadow-sm: 0 1px 2px rgba(15,23,42,.04);
+  --shadow-md: 0 8px 24px rgba(15,23,42,.08);
+  --shadow-lg: 0 12px 32px rgba(15,23,42,.10);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth;}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.6;}
 
-import serpapi
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
-from pydantic import BaseModel, Field
+.topbar{position:sticky;top:0;z-index:200;height:64px;background:var(--nav-bg);border-bottom:1px solid rgba(255,255,255,0.06);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 36px;}
+.topbar-left{display:flex;align-items:center;justify-content:flex-start;}
+.topbar-center{display:flex;align-items:center;justify-content:center;gap:8px;}
+.topbar-right{display:flex;align-items:center;justify-content:flex-end;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-icon{width:36px;height:36px;border-radius:10px;background:var(--boeing-blue);display:flex;align-items:center;justify-content:center;color:white;font-size:13px;}
+.brand-text{color:var(--white);font-family:'Space Mono',monospace;font-size:15px;font-weight:700;letter-spacing:-0.3px;}
+.brand-text span{color:var(--boeing-blue);}
+.nav-link{background:transparent;border:1px solid transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;padding:9px 15px;border-radius:10px;cursor:pointer;transition:all .18s;}
+.nav-link:hover{color:white;background:rgba(255,255,255,.04);}
+.nav-link.active{color:white;background:var(--boeing-blue-soft);border-color:rgba(31,111,235,.24);}
+.live-indicator{display:inline-flex;align-items:center;gap:8px;color:var(--green);font-size:12px;font-family:'Space Mono',monospace;}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+.hero-search{background:linear-gradient(180deg,var(--hero-bg) 0%,var(--hero-bg-2) 100%);border-bottom:1px solid rgba(255,255,255,0.06);padding:26px 36px 28px;}
+.hero-search-inner{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:1.2fr auto 1.2fr 1fr 1fr 1fr .85fr auto;gap:14px;align-items:end;}
+.field-group{display:flex;flex-direction:column;gap:8px;}
+.field-group label{font-size:10px;letter-spacing:.12em;color:var(--muted-2);font-family:'Space Mono',monospace;}
+.field-group input,.field-group select{height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--white);font-family:'DM Sans',sans-serif;font-size:15px;outline:none;transition:border-color .18s,box-shadow .18s;}
+.field-group input:focus,.field-group select:focus{border-color:var(--input-border-focus);box-shadow:0 0 0 3px rgba(31,111,235,.14);}
+.field-group input::placeholder{color:var(--muted);}
+.field-group select option{background:var(--input-bg);}
+.swap-icon{height:44px;display:flex;align-items:center;color:var(--muted-2);font-size:22px;padding:0 2px;}
+
+.airport-wrap{position:relative;}
+.apt-input{padding-right:50px !important;}
+.apt-pill{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:var(--boeing-blue);background:rgba(31,111,235,.15);padding:2px 7px;border-radius:5px;pointer-events:none;opacity:0;transition:opacity .15s;}
+.apt-pill.on{opacity:1;}
+.apt-dd{position:absolute;top:calc(100% + 6px);left:0;z-index:500;background:#0f1e35;border:1px solid rgba(31,111,235,.3);border-radius:var(--radius-md);min-width:300px;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.55);overflow:hidden;display:none;}
+.apt-dd.open{display:block;}
+.apt-dd-hdr{padding:8px 13px 6px;font-size:9px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--muted-2);border-bottom:1px solid rgba(255,255,255,.06);}
+.apt-opt{display:flex;align-items:center;gap:11px;padding:10px 13px;cursor:pointer;transition:background .12s;border-bottom:1px solid rgba(255,255,255,.04);}
+.apt-opt:last-child{border-bottom:none;}
+.apt-opt:hover,.apt-opt.focused{background:rgba(31,111,235,.18);}
+.apt-iata{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:#60a5fa;width:34px;flex-shrink:0;}
+.apt-info{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0;}
+.apt-name{font-size:13px;font-weight:500;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.apt-city{font-size:11px;color:var(--muted-2);}
+.apt-tag{font-size:9px;font-family:'Space Mono',monospace;padding:2px 6px;border-radius:4px;flex-shrink:0;}
+.apt-tag.exact{background:rgba(16,185,129,.18);color:#34d399;}
+.apt-tag.match{background:rgba(31,111,235,.18);color:#60a5fa;}
+.apt-tag.close{background:rgba(217,119,6,.18);color:#fbbf24;}
+
+.hero-search-btn{height:44px;min-width:190px;padding:0 22px;border:none;border-radius:12px;background:var(--boeing-blue);color:white;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:background .18s,transform .15s;white-space:nowrap;}
+.hero-search-btn:hover{background:var(--boeing-blue-hover);transform:translateY(-1px);}
+.hero-search-btn:active{transform:translateY(0);}
+.hero-search-btn .spin{display:none;animation:spin .7s linear infinite;}
+.hero-search-btn .icon{display:inline;}
+.hero-search-btn.loading .spin{display:inline;}
+.hero-search-btn.loading .icon{display:none;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.layout{max-width:1300px;margin:0 auto;padding:1.5rem 2rem;display:grid;grid-template-columns:280px 1fr;gap:1.5rem;}
+.layout.full{grid-template-columns:1fr;}
+.sidebar{display:flex;flex-direction:column;gap:1rem;}
+
+.panel,.stat-card,.flight-card,.loading-bar,.message-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);}
+.panel{padding:16px;}
+.panel-title{font-size:11px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1rem;}
+
+.weight-controls{display:flex;flex-direction:column;gap:.9rem;}
+.weight-row{display:flex;flex-direction:column;gap:6px;margin-bottom:4px;}
+.weight-header{display:flex;justify-content:space-between;align-items:center;}
+.weight-label{font-size:13px;font-weight:600;color:var(--text);}
+.weight-val{font-size:12px;font-family:'Space Mono',monospace;color:var(--boeing-blue);}
+.weight-subtext{font-size:11px;color:var(--text3);}
+input[type="range"]{width:100%;appearance:none;height:4px;border-radius:999px;background:var(--surface3);outline:none;cursor:pointer;}
+input[type="range"]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:var(--boeing-blue);border:2px solid white;box-shadow:0 1px 6px rgba(31,111,235,.25);cursor:pointer;}
+input[type="range"]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--boeing-blue);border:2px solid white;cursor:pointer;}
+.recalc-btn{width:100%;border:none;border-radius:10px;padding:10px;background:linear-gradient(135deg,var(--boeing-blue),var(--boeing-blue-hover));color:white;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer;margin-top:.5rem;box-shadow:0 4px 12px rgba(31,111,235,.18);transition:transform .15s,box-shadow .15s;}
+.recalc-btn:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(31,111,235,.22);}
+
+.insight-box{background:#eef5ff;border:1px solid #c9dcff;border-radius:12px;padding:12px 14px;font-size:12px;color:var(--boeing-blue);line-height:1.55;}
+.insight-box strong{color:var(--boeing-blue-hover);}
+
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1rem;}
+.stat-card{padding:14px 16px;}
+.stat-label{font-size:10px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:4px;}
+.stat-val{font-size:20px;font-weight:700;color:var(--text);}
+.stat-val.green{color:var(--green);}
+.stat-val.amber{color:var(--amber);}
+
+.results-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:8px;}
+.results-title{font-size:18px;font-weight:700;color:var(--text);}
+.results-meta{font-size:12px;color:var(--text2);}
+.sort-toggle{display:flex;gap:6px;}
+.sort-btn{padding:6px 12px;border-radius:var(--radius-sm);font-size:12px;border:1px solid var(--border);background:white;color:var(--text2);font-family:'DM Sans',sans-serif;font-weight:500;cursor:pointer;transition:all .15s;}
+.sort-btn:hover{border-color:var(--border2);background:var(--surface2);}
+.sort-btn.active{background:var(--boeing-blue-dim);border-color:var(--boeing-blue);color:var(--boeing-blue);}
+
+.loading-bar,.message-box{padding:2.5rem;text-align:center;color:var(--text2);font-size:14px;}
+.loading-dots{display:inline-flex;gap:6px;margin-top:1.25rem;}
+.loading-dots span{width:7px;height:7px;border-radius:50%;background:var(--boeing-blue);animation:bounce .9s infinite;}
+.loading-dots span:nth-child(2){animation-delay:.15s;}
+.loading-dots span:nth-child(3){animation-delay:.30s;}
+@keyframes bounce{0%,80%,100%{transform:scale(.55);opacity:.35;}40%{transform:scale(1);opacity:1;}}
+
+.flight-card{padding:1.25rem;margin-bottom:12px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s,box-shadow .2s;animation:fadeIn .25s ease;}
+.flight-card:hover{border-color:var(--border2);transform:translateY(-1px);box-shadow:var(--shadow-md);}
+.flight-card.best{border:2px solid var(--boeing-blue);background:linear-gradient(135deg,#fff 0%,#f7fbff 100%);box-shadow:var(--shadow-lg);}
+.flight-card.best::before{content:'BEST MATCH';position:absolute;top:0;right:0;background:var(--boeing-blue);color:white;font-size:9px;font-family:'Space Mono',monospace;letter-spacing:.08em;padding:4px 10px;border-bottom-left-radius:var(--radius-sm);}
+@keyframes fadeIn{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:translateY(0);}}
+.card-inner{display:grid;grid-template-columns:220px 1fr 60px 110px;gap:1rem;align-items:center;}
+.airline-info{display:flex;align-items:center;gap:12px;}
+.airline-logo{width:40px;height:40px;border-radius:10px;background:var(--surface2)!important;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:var(--text2)!important;flex-shrink:0;overflow:hidden;}
+.airline-logo img{width:24px;height:24px;object-fit:contain;}
+.airline-name{font-weight:700;font-size:14px;line-height:1.3;color:var(--text);}
+.flight-code{font-size:11px;color:var(--text3);font-family:'Space Mono',monospace;}
+.source-badge{display:inline-flex;align-items:center;gap:4px;margin-top:4px;font-size:10px;font-family:'Space Mono',monospace;padding:2px 7px;border-radius:6px;background:#f1f5f9;color:var(--boeing-blue);border:1px solid var(--border);}
+.route-visual{display:flex;align-items:center;padding:0 1rem;}
+.airport-block{text-align:center;flex-shrink:0;}
+.airport-time{font-size:18px;font-weight:700;font-family:'Space Mono',monospace;color:var(--text);}
+.airport-code{font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;letter-spacing:.06em;}
+.route-line{flex:1;display:flex;flex-direction:column;align-items:center;padding:0 8px;gap:4px;}
+.route-duration{font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;}
+.route-track{width:100%;height:2px;background:var(--border2);position:relative;display:flex;align-items:center;justify-content:center;}
+.route-plane{position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:14px;}
+.route-stop{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;}
+.stop-nonstop{color:#15803d;background:rgba(22,163,74,.12);font-weight:700;}
+.stop-one{color:var(--amber);background:var(--amber-dim);}
+.stop-two{color:var(--red);background:var(--red-dim);}
+.score-col{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.score-ring{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-family:'Space Mono',monospace;font-weight:700;border:2px solid;}
+.score-high{border-color:var(--green);color:var(--green);background:var(--green-dim);}
+.score-med{border-color:var(--amber);color:var(--amber);background:var(--amber-dim);}
+.score-low{border-color:var(--border2);color:var(--text2);background:var(--surface2);}
+.price-col{text-align:right;}
+.price-main{font-size:22px;font-weight:700;font-family:'Space Mono',monospace;color:var(--text);}
+.price-per{font-size:10px;color:var(--text3);}
+.select-btn{width:100%;margin-top:8px;background:linear-gradient(135deg,var(--boeing-blue),var(--boeing-blue-hover));border:1px solid var(--boeing-blue);border-radius:10px;padding:7px 0;color:white;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(31,111,235,.16);transition:transform .15s,box-shadow .15s;}
+.select-btn:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(31,111,235,.2);}
+.score-breakdown{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
+.breakdown-item{display:flex;flex-direction:column;gap:3px;}
+.breakdown-label{font-size:9px;font-family:'Space Mono',monospace;text-transform:uppercase;color:var(--text3);letter-spacing:.06em;}
+.breakdown-bar-wrap{width:80px;height:3px;background:var(--surface3);border-radius:999px;}
+.breakdown-bar{height:100%;border-radius:999px;}
+
+.trips-empty{padding:3.5rem;text-align:center;color:var(--text3);font-size:13px;line-height:1.7;}
+.trips-empty .icon{font-size:36px;margin-bottom:.75rem;display:block;}
+.trips-empty strong{color:var(--text2);}
+
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;}
+canvas{display:block;}
+
+.flight-modal{position:fixed;inset:0;z-index:9999;display:none;}
+.flight-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.52);backdrop-filter:blur(2px);}
+.flight-modal-panel{position:relative;width:min(960px,calc(100% - 32px));max-height:calc(100vh - 40px);overflow-y:auto;margin:20px auto;background:white;border-radius:18px;box-shadow:0 20px 50px rgba(15,23,42,.22);}
+.flight-modal-header{position:sticky;top:0;z-index:2;background:white;border-bottom:1px solid var(--border);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;}
+.flight-modal-header h2{font-size:19px;color:var(--text);}
+.flight-modal-close{border:1px solid var(--border);background:white;width:36px;height:36px;border-radius:10px;cursor:pointer;font-size:16px;color:var(--text2);display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.flight-modal-close:hover{background:var(--surface2);}
+.flight-modal-body{padding:22px;display:flex;flex-direction:column;gap:16px;}
+.detail-summary{display:flex;flex-wrap:wrap;gap:10px;}
+.detail-chip{background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:7px 13px;font-size:13px;color:var(--text);}
+.detail-chip strong{color:var(--boeing-blue);}
+.detail-block{border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:14px;}
+.detail-block-title{font-family:'Space Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px;}
+.detail-leg{border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;}
+.detail-leg-header{font-weight:700;margin-bottom:10px;color:var(--boeing-blue);font-size:13px;}
+.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px;margin-bottom:14px;font-size:13px;color:var(--text2);}
+.detail-grid strong{color:var(--text);}
+.detail-route{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;margin-bottom:10px;}
+.detail-airport-box{background:var(--surface2);border-radius:12px;padding:12px;border:1px solid var(--border);}
+.detail-time{font-weight:700;font-size:14px;color:var(--text);}
+.detail-airport{color:var(--text2);font-size:13px;margin-top:4px;}
+.detail-arrow{font-size:22px;color:var(--text3);text-align:center;}
+.detail-note{font-size:13px;color:var(--boeing-blue-hover);background:#eef5ff;border:1px solid #c9dcff;border-radius:10px;padding:10px 12px;margin-top:8px;}
+
+.site-footer{margin-top:40px;background:#0b1423;color:#cbd5e1;border-top:1px solid rgba(255,255,255,.06);}
+.footer-inner{max-width:1300px;margin:0 auto;padding:28px 32px 20px;display:grid;grid-template-columns:1.2fr 1fr;gap:32px;}
+.footer-brand{display:flex;flex-direction:column;gap:12px;}
+.footer-logo{display:flex;align-items:center;gap:12px;}
+.footer-logo-icon{width:34px;height:34px;border-radius:10px;background:var(--boeing-blue);display:flex;align-items:center;justify-content:center;color:white;font-size:13px;}
+.footer-logo-text{color:#f8fafc;font-family:'Space Mono',monospace;font-size:15px;font-weight:700;}
+.footer-logo-text span{color:var(--boeing-blue);}
+.footer-copy{max-width:400px;color:#94a3b8;font-size:13px;line-height:1.7;}
+.footer-links{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.footer-column{display:flex;flex-direction:column;gap:8px;}
+.footer-column h4{color:#f8fafc;font-size:12px;font-family:'Space Mono',monospace;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+.footer-column a,.footer-column span{color:#94a3b8;text-decoration:none;font-size:13px;cursor:pointer;}
+.footer-column a:hover{color:white;}
+.footer-status{display:inline-flex;align-items:center;gap:8px;}
+.footer-status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);}
+.footer-bottom{max-width:1300px;margin:0 auto;padding:14px 32px 20px;border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#64748b;font-size:12px;}
+
+#skyopt-toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#0f172a;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 20px;font-size:13px;color:white;z-index:9000;transition:opacity .3s;pointer-events:none;font-family:'DM Sans',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);}
 
 
-# ============================================================
-# ENVIRONMENT
-# ============================================================
+.optimizer-hero{background:linear-gradient(135deg,#081221 0%,#0d2240 100%);color:white;padding:34px 36px;border-bottom:1px solid rgba(255,255,255,.06);}
+.optimizer-hero-inner{max-width:1300px;margin:0 auto;}
+.optimizer-kicker{font:700 10px 'Space Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#60a5fa;margin-bottom:8px;}
+.optimizer-hero h1{font-size:30px;line-height:1.2;margin-bottom:8px;}
+.optimizer-hero p{max-width:760px;color:#b6c2d9;font-size:14px;}
+.optimizer-grid{max-width:1300px;margin:0 auto;padding:24px 32px;display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.optimizer-card{background:white;border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:20px;}
+.optimizer-card.wide{grid-column:1/-1;}
+.optimizer-card h3{font-size:14px;margin-bottom:14px;}
+.opt-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.opt-field{display:flex;flex-direction:column;gap:6px;}
+.opt-field label{font-size:10px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);}
+.opt-field input,.opt-field select{height:42px;border:1px solid var(--border2);border-radius:10px;padding:0 12px;font-family:'DM Sans',sans-serif;background:white;color:var(--text);outline:none;}
+.opt-checks{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+.opt-check{display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);font-size:13px;}
+.opt-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.opt-primary,.opt-secondary{border-radius:10px;padding:11px 16px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;}
+.opt-primary{border:0;background:var(--boeing-blue);color:white;}
+.opt-secondary{border:1px solid var(--border2);background:white;color:var(--text2);}
+.opt-preview{border:1px dashed #93c5fd;background:#f8fbff;border-radius:12px;padding:16px;color:var(--text2);font-size:13px;line-height:1.7;}
+@media(max-width:800px){.optimizer-grid{grid-template-columns:1fr;padding:18px}.optimizer-card.wide{grid-column:auto}.opt-fields,.opt-checks{grid-template-columns:1fr}.optimizer-hero{padding:28px 20px}}
 
-load_dotenv()
+.ai-search-wrap{max-width:1320px;margin:18px auto 0;padding:0 36px;}
+.ai-search-card{background:linear-gradient(135deg,#0d1b30,#102746);border:1px solid rgba(96,165,250,.22);border-radius:16px;box-shadow:0 12px 30px rgba(2,8,23,.18);overflow:hidden;}
+.ai-search-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.07);}
+.ai-search-title{display:flex;align-items:center;gap:10px;color:#f8fafc;font-weight:700;font-size:14px;}
+.ai-badge{font:700 9px 'Space Mono',monospace;letter-spacing:.08em;background:rgba(31,111,235,.22);color:#93c5fd;border:1px solid rgba(96,165,250,.25);padding:4px 7px;border-radius:6px;}
+.ai-search-sub{font-size:12px;color:#94a3b8;}
+.ai-chat-log{max-height:260px;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:10px;}
+.ai-msg{max-width:82%;padding:10px 13px;border-radius:12px;font-size:13px;line-height:1.55;white-space:pre-wrap;}
+.ai-msg.bot{align-self:flex-start;background:rgba(255,255,255,.07);color:#dbeafe;border:1px solid rgba(255,255,255,.06);}
+.ai-msg.user{align-self:flex-end;background:#1f6feb;color:white;}
+.ai-compose{display:grid;grid-template-columns:1fr auto;gap:10px;padding:0 18px 16px;}
+.ai-compose textarea{min-height:54px;max-height:120px;resize:vertical;border:1px solid rgba(148,163,184,.24);border-radius:12px;background:#172a46;color:#f8fafc;padding:12px 14px;font:13px 'DM Sans',sans-serif;outline:none;}
+.ai-compose textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12);}
+.ai-compose textarea::placeholder{color:#94a3b8;}
+.ai-send{border:0;border-radius:12px;background:#1f6feb;color:white;font-weight:700;padding:0 18px;cursor:pointer;min-width:110px;}
+.ai-send:disabled{opacity:.55;cursor:wait;}
+.ai-chips{display:flex;gap:7px;flex-wrap:wrap;padding:0 18px 14px;}
+.ai-chip{border:1px solid rgba(148,163,184,.22);background:rgba(255,255,255,.05);color:#b6c2d9;border-radius:999px;padding:6px 10px;font-size:11px;cursor:pointer;}
+.ai-chip:hover{border-color:#3b82f6;color:white;}
+.ai-constraint-note{padding:0 18px 14px;color:#7dd3fc;font:10px 'Space Mono',monospace;}
+@media(max-width:700px){.ai-search-wrap{padding:0 20px}.ai-search-head{align-items:flex-start;flex-direction:column}.ai-compose{grid-template-columns:1fr}.ai-send{height:44px}.ai-msg{max-width:94%}}
+@media(max-width:1200px){.hero-search-inner{display:flex;flex-wrap:wrap;align-items:flex-end;}}
+@media(max-width:1100px){.topbar{grid-template-columns:1fr;height:auto;gap:12px;padding:14px 20px;}.topbar-left,.topbar-center,.topbar-right{justify-content:center;}.card-inner{grid-template-columns:1fr 1fr;}}
+@media(max-width:900px){.layout{grid-template-columns:1fr;}.stats-row{grid-template-columns:repeat(2,1fr);}.card-inner{grid-template-columns:1fr;}.charts-grid{grid-template-columns:1fr;}.footer-inner{grid-template-columns:1fr;}.footer-links{grid-template-columns:1fr 1fr;}}
+@media(max-width:700px){.hero-search{padding:20px;}.hero-search-inner{flex-direction:column;align-items:stretch;}.hero-search-inner>*{width:100%;}.swap-icon{display:none;}.topbar-center{flex-wrap:wrap;}.detail-grid{grid-template-columns:1fr;}.detail-route{grid-template-columns:1fr;}.detail-arrow{display:none;}}
+@media(max-width:640px){.layout{padding:1rem;}.stats-row{grid-template-columns:1fr 1fr;}.footer-links{grid-template-columns:1fr;}.footer-inner,.footer-bottom{padding-left:20px;padding-right:20px;}}
+</style>
+</head>
+<body>
 
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
-FRONTEND_URL = os.getenv("FRONTEND_URL")
+<nav class="topbar">
+  <div class="topbar-left">
+    <div class="brand">
+      <div class="brand-icon">✈</div>
+      <div class="brand-text">Sky<span>Opt</span> IQ</div>
+    </div>
+  </div>
+  <div class="topbar-center">
+    <button class="nav-link active" onclick="switchView('search',this)">Flight Search</button>
+    <button class="nav-link" onclick="switchView('trips',this)">My Trips</button>
+    <button class="nav-link" onclick="switchView('analytics',this)">Analytics</button>
+  </div>
+  <div class="topbar-right">
+    <span class="live-indicator"><span class="live-dot"></span>By Blessing</span>
+  </div>
+</nav>
 
+<div id="view-search">
+  <section class="hero-search">
+    <div class="hero-search-inner">
 
-# ============================================================
-# APP
-# ============================================================
+      <div class="field-group">
+        <label>From</label>
+        <div class="airport-wrap">
+          <input class="apt-input" id="from" type="text" autocomplete="off" placeholder="City or airport code"
+            oninput="onAptInput('from')" onkeydown="onAptKey(event,'from')" onblur="onAptBlur('from')">
+          <span class="apt-pill" id="from-pill"></span>
+          <div class="apt-dd" id="from-dd">
+            <div class="apt-dd-hdr">Select airport</div>
+            <div id="from-opts"></div>
+          </div>
+        </div>
+      </div>
 
-app = FastAPI(
-    title="SkyOpt IQ Backend",
-    version="2.0.0",
-    description="AI-powered flight search and travel optimization backend",
-)
+      <div class="swap-icon">→</div>
 
+      <div class="field-group">
+        <label>To</label>
+        <div class="airport-wrap">
+          <input class="apt-input" id="to" type="text" autocomplete="off" placeholder="City or airport code"
+            oninput="onAptInput('to')" onkeydown="onAptKey(event,'to')" onblur="onAptBlur('to')">
+          <span class="apt-pill" id="to-pill"></span>
+          <div class="apt-dd" id="to-dd">
+            <div class="apt-dd-hdr">Select airport</div>
+            <div id="to-opts"></div>
+          </div>
+        </div>
+      </div>
 
-# ============================================================
-# CORS
-# ============================================================
+      <div class="field-group">
+  <label>Trip Type</label>
+  <select id="tripType" onchange="handleTripTypeChange()">
+    <option value="oneway">One Way</option>
+    <option value="roundtrip">Round Trip</option>
+    <option value="multi">Multi City</option>
+  </select>
+</div>
+<div class="field-group" id="departGroup">
+  <label>Depart</label>
+  <input type="date" id="depdate">
+</div>
 
-allowed_origins = [
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-]
+<script>
+  document.getElementById("depdate").value = 
+    new Date().toISOString().split("T")[0];
+</script>
 
-if FRONTEND_URL:
-    allowed_origins.append(FRONTEND_URL.rstrip("/"))
+<div class="field-group" id="returnGroup" style="display:none;">
+  <label>Return</label>
+  <input type="date" id="retdate" value="2026-04-25">
+</div>
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+<div class="field-group" id="multiSecondDepartGroup" style="display:none;">
+  <label>2nd Depart</label>
+  <input type="date" id="multiDepdate2" value="2026-04-25">
+</div>
+      <div class="field-group">
+        <label>Class</label>
+        <select id="cabin">
+          <option value="economy">Economy</option>
+          <option value="premium">Premium Economy</option>
+          <option value="business">Business</option>
+        </select>
+      </div>
+      <div class="field-group">
+  <label>Pax</label>
+  <input type="number" id="pax" min="1" value="1">
+</div>
 
+      <button class="hero-search-btn" id="searchBtn" onclick="startSearch()">
+        <span class="icon">⟳</span><span class="spin">↻</span> Search All Sources
+      </button>
+    </div>
+  </section>
 
-# ============================================================
-# OPENAI CLIENT
-# ============================================================
+  <section class="ai-search-wrap" aria-label="SkyOpt AI travel search">
+    <div class="ai-search-card">
+      <div class="ai-search-head">
+        <div>
+          <div class="ai-search-title"><span class="ai-badge">AI</span> Ask SkyOpt IQ</div>
+          <div class="ai-search-sub">Describe the trip you want in plain language. AI Search works alongside the normal Flight Search above.</div>
+        </div>
+        <div class="ai-search-sub">Search → understand constraints → rank results</div>
+      </div>
+      <div class="ai-chat-log" id="aiChatLog">
+        <div class="ai-msg bot">Tell me where and roughly when you want to travel. You do not need to know an airport. Example: “I want to travel from USA to Barcelona between Dec 23 and Dec 31.”</div>
+      </div>
+      <div class="ai-chips">
+        <button class="ai-chip" onclick="useAiExample(this)">USA to Barcelona Dec 23–31</button>
+        <button class="ai-chip" onclick="useAiExample(this)">I live near ZIP 03431</button>
+        <button class="ai-chip" onclick="useAiExample(this)">I can drive up to 100 miles</button>
+      </div>
+      <div class="ai-compose">
+        <textarea id="aiPrompt" placeholder="Ask SkyOpt IQ to find and optimize your trip…" onkeydown="aiPromptKey(event)"></textarea>
+        <button class="ai-send" id="aiSendBtn" onclick="runAiSearch()">Search with AI</button>
+      </div>
+      <div class="ai-constraint-note" id="aiConstraintNote">SkyOpt IQ uses your OpenAI-powered backend to understand the trip, remember constraints, and ask only for missing details.</div>
+    </div>
+  </section>
 
-openai_client = None
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="panel">
+        <div class="panel-title">Optimization Weights</div>
+        <div class="weight-controls">
+          <div class="weight-row">
+            <div class="weight-header"><span class="weight-label">Price</span><span class="weight-val" id="wPrice-val">50%</span></div>
+            <input type="range" id="wPrice" min="0" max="100" value="50" step="1" oninput="updateWeight('wPrice')">
+            <div class="weight-subtext">Lower fares prioritized</div>
+          </div>
+          <div class="weight-row">
+            <div class="weight-header"><span class="weight-label">Stops</span><span class="weight-val" id="wStops-val">30%</span></div>
+            <input type="range" id="wStops" min="0" max="100" value="30" step="1" oninput="updateWeight('wStops')">
+            <div class="weight-subtext">Fewer layovers preferred</div>
+          </div>
+          <div class="weight-row">
+            <div class="weight-header"><span class="weight-label">Duration</span><span class="weight-val" id="wDuration-val">20%</span></div>
+            <input type="range" id="wDuration" min="0" max="100" value="20" step="1" oninput="updateWeight('wDuration')">
+            <div class="weight-subtext">Shorter total flight time</div>
+          </div>
+          <button class="recalc-btn" onclick="recalcScores()">Re-rank Results</button>
+        </div>
+      </div>
+      <div class="insight-box" id="insightBox"><strong>Tip:</strong> Search flights to see optimizer insights.</div>
+      <div class="panel" style="padding: 1rem;">
+      <div class="panel-title">Price Trend (30d)</div>
+      <canvas id="trendChart" width="240" height="80"></canvas>
+      <div style="display:flex; justify-content:space-between; margin-top:6px;">
+        <span style="font-size:10px; color:var(--green); font-family:'Space Mono',monospace;">Lowest: $598</span>
+        <span style="font-size:10px; color:var(--text3); font-family:'Space Mono',monospace;">Today avg: $847</span>
+      </div>
+    </div>
+    </aside>
 
-if OPENAI_API_KEY:
-    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    <main>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Results</div><div class="stat-val" id="statCount">0</div></div>
+        <div class="stat-card"><div class="stat-label">Lowest Price</div><div class="stat-val green" id="statLow">—</div></div>
+        <div class="stat-card"><div class="stat-label">Best Score</div><div class="stat-val amber" id="statScore">—</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Duration</div><div class="stat-val" id="statDur">—</div></div>
+      </div>
+      <div class="results-header">
+        <div>
+          <div class="results-title" id="routeTitle">Ready to search</div>
+          <div class="results-meta" id="resultsMetaText">Enter a route and click Search All Sources</div>
+        </div>
+        <div class="sort-toggle">
+          <button class="sort-btn active" onclick="setSortMode('score',this)">Score</button>
+          <button class="sort-btn" onclick="setSortMode('price',this)">Price</button>
+          <button class="sort-btn" onclick="setSortMode('duration',this)">Duration</button>
+          <button class="sort-btn" onclick="setSortMode('stops',this)">Stops</button>
+        </div>
+      </div>
+      <div id="loadingState" style="display:none;">
+        <div class="loading-bar">
+          Querying FastAPI backend…
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;">Fetching &amp; scoring results</div>
+          <div class="loading-dots"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+      <div id="flightResults">
+        <div class="message-box">Enter a route above and click <strong>Search All Sources</strong>.</div>
+      </div>
+    </main>
+  </div>
+</div>
 
+<div id="view-trips" style="display:none;">
+  <div class="layout full" style="max-width:1300px;margin:0 auto;padding:1.5rem 2rem;">
+    <div class="panel"><div class="panel-title">My Trips</div><div id="tripsList"></div></div>
+  </div>
+</div>
 
-# ============================================================
-# REQUEST MODELS
-# ============================================================
+<div id="view-analytics" style="display:none;">
+  <div style="max-width:1300px;margin:0 auto;padding:1.5rem 2rem;">
+    <div class="stats-row" style="margin-bottom:1rem;">
+      <div class="stat-card"><div class="stat-label">Saved Trips</div><div class="stat-val" id="anaSavedTrips">0</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Saved Price</div><div class="stat-val green" id="anaAvgPrice">—</div></div>
+      <div class="stat-card"><div class="stat-label">Cheapest Saved</div><div class="stat-val amber" id="anaCheapest">—</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Duration</div><div class="stat-val" id="anaAvgDuration">—</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:1rem;">
+      <div class="panel-title">Summary</div>
+      <div id="analyticsSummary" style="color:var(--text2);font-size:14px;">No analytics yet. Save some trips first.</div>
+    </div>
+    <div class="charts-grid">
+      <div class="panel"><div class="panel-title">Price Distribution</div><canvas id="priceChart" height="180"></canvas></div>
+      <div class="panel"><div class="panel-title">Airlines Saved</div><canvas id="airlineChart" height="180"></canvas></div>
+      <div class="panel"><div class="panel-title">Stops Distribution</div><canvas id="stopsChart" height="180"></canvas></div>
+      <div class="panel"><div class="panel-title">Saved Trips Table</div><div id="analyticsTableWrap"></div></div>
+    </div>
+  </div>
+</div>
 
-class FlightSearchRequest(BaseModel):
-    trip_type: str = "oneway"
+<div id="flightDetailModal" class="flight-modal">
+  <div class="flight-modal-backdrop" onclick="closeModal()"></div>
+  <div class="flight-modal-panel">
+    <div class="flight-modal-header">
+      <h2 id="flightDetailTitle">Flight Details</h2>
+      <button class="flight-modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="flightDetailBody" class="flight-modal-body"></div>
+  </div>
+</div>
 
-    origin: str
-    destination: str
+<div id="skyopt-toast" style="opacity:0;">Trip saved!</div>
 
-    depart_date: str
-    return_date: Optional[str] = None
-    second_depart_date: Optional[str] = None
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="footer-logo">
+        <div class="footer-logo-icon">✈</div>
+        <div class="footer-logo-text">Sky<span>Opt</span> IQ</div>
+      </div>
+      <p class="footer-copy">Flight search, trip saving, and analytics in one clean dashboard.</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-column">
+        <h4>Platform</h4>
+        <a onclick="switchView('search',document.querySelectorAll('.nav-link')[0])">Flight Search</a>
+        <a onclick="switchView('trips', document.querySelectorAll('.nav-link')[1])">My Trips</a>
+        <a onclick="switchView('analytics',document.querySelectorAll('.nav-link')[2])">Analytics</a>
+      </div>
+      <div class="footer-column">
+        <h4>Data</h4>
+        <span>FastAPI Backend</span><span>SerpAPI Flights</span><span>Local Trip Storage</span>
+      </div>
+      <div class="footer-column">
+        <h4>Status</h4>
+        <span class="footer-status"><span class="footer-status-dot"></span>Live Search Ready</span>
+        <span>Frontend + API Connected</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 SkyOpt IQ</span>
+    <span>Built by Blessing Sithole</span>
+  </div>
+</footer>
 
-    cabin: str = "economy"
-    passengers: int = 1
+<script>
+const BACKEND_URL = 'https://skyoptiq-2.onrender.com';
 
-    weight_price: float = 0.5
-    weight_stops: float = 0.3
-    weight_duration: float = 0.2
+const AIRPORTS=[
+  {iata:'JFK',name:'John F. Kennedy International',city:'New York',country:'US',aliases:['kennedy','new york','nyc','jfk']},
+  {iata:'LGA',name:'LaGuardia Airport',city:'New York',country:'US',aliases:['laguardia','la guardia','nyc']},
+  {iata:'EWR',name:'Newark Liberty International',city:'Newark / NYC',country:'US',aliases:['newark','liberty','new jersey']},
+  {iata:'LAX',name:'Los Angeles International',city:'Los Angeles',country:'US',aliases:['los angeles','lax','la']},
+  {iata:'ORD',name:"O'Hare International",city:'Chicago',country:'US',aliases:['ohare','chicago','o hare']},
+  {iata:'MDW',name:'Chicago Midway',city:'Chicago',country:'US',aliases:['midway','chicago midway']},
+  {iata:'ATL',name:'Hartsfield-Jackson Atlanta',city:'Atlanta',country:'US',aliases:['atlanta','hartsfield']},
+  {iata:'DFW',name:'Dallas/Fort Worth International',city:'Dallas',country:'US',aliases:['dallas','fort worth','dfw']},
+  {iata:'DEN',name:'Denver International',city:'Denver',country:'US',aliases:['denver']},
+  {iata:'SFO',name:'San Francisco International',city:'San Francisco',country:'US',aliases:['san francisco','sf','frisco']},
+  {iata:'SEA',name:'Seattle-Tacoma International',city:'Seattle',country:'US',aliases:['seattle','tacoma','sea-tac']},
+  {iata:'MIA',name:'Miami International',city:'Miami',country:'US',aliases:['miami']},
+  {iata:'BOS',name:'Logan International',city:'Boston',country:'US',aliases:['boston','logan']},
+  {iata:'IAD',name:'Washington Dulles International',city:'Washington DC',country:'US',aliases:['dulles','washington','dc']},
+  {iata:'DCA',name:'Ronald Reagan Washington National',city:'Washington DC',country:'US',aliases:['reagan','national','dca','washington dc']},
+  {iata:'LAS',name:'Harry Reid International',city:'Las Vegas',country:'US',aliases:['las vegas','vegas','sin city']},
+  {iata:'PHX',name:'Phoenix Sky Harbor',city:'Phoenix',country:'US',aliases:['phoenix','sky harbor']},
+  {iata:'MSP',name:'Minneapolis–Saint Paul',city:'Minneapolis',country:'US',aliases:['minneapolis','st paul','twin cities']},
+  {iata:'DTW',name:'Detroit Metro Wayne County',city:'Detroit',country:'US',aliases:['detroit','wayne county']},
+  {iata:'CLT',name:'Charlotte Douglas International',city:'Charlotte',country:'US',aliases:['charlotte','douglas']},
+  {iata:'MCO',name:'Orlando International',city:'Orlando',country:'US',aliases:['orlando','disney','disneyworld']},
+  {iata:'IAH',name:'George Bush Intercontinental',city:'Houston',country:'US',aliases:['houston','bush','intercontinental']},
+  {iata:'HOU',name:'William P. Hobby Airport',city:'Houston',country:'US',aliases:['hobby','houston hobby']},
+  {iata:'SAN',name:'San Diego International',city:'San Diego',country:'US',aliases:['san diego','lindbergh']},
+  {iata:'TPA',name:'Tampa International',city:'Tampa',country:'US',aliases:['tampa']},
+  {iata:'PDX',name:'Portland International',city:'Portland',country:'US',aliases:['portland']},
+  {iata:'SLC',name:'Salt Lake City International',city:'Salt Lake City',country:'US',aliases:['salt lake','salt lake city']},
+  {iata:'AUS',name:'Austin-Bergstrom International',city:'Austin',country:'US',aliases:['austin','bergstrom']},
+  {iata:'BNA',name:'Nashville International',city:'Nashville',country:'US',aliases:['nashville']},
+  {iata:'MCI',name:'Kansas City International',city:'Kansas City',country:'US',aliases:['kansas city','kc']},
+  {iata:'PHL',name:'Philadelphia International',city:'Philadelphia',country:'US',aliases:['philadelphia','philly']},
+  {iata:'BWI',name:'Baltimore/Washington International',city:'Baltimore',country:'US',aliases:['baltimore']},
+  {iata:'LHR',name:'Heathrow Airport',city:'London',country:'GB',aliases:['heathrow','london']},
+  {iata:'LGW',name:'Gatwick Airport',city:'London',country:'GB',aliases:['gatwick','london gatwick']},
+  {iata:'STN',name:'Stansted Airport',city:'London',country:'GB',aliases:['stansted']},
+  {iata:'CDG',name:'Charles de Gaulle Airport',city:'Paris',country:'FR',aliases:['paris','de gaulle','charles de gaulle']},
+  {iata:'ORY',name:'Orly Airport',city:'Paris',country:'FR',aliases:['orly','paris orly']},
+  {iata:'AMS',name:'Amsterdam Schiphol',city:'Amsterdam',country:'NL',aliases:['amsterdam','schiphol']},
+  {iata:'FRA',name:'Frankfurt Airport',city:'Frankfurt',country:'DE',aliases:['frankfurt']},
+  {iata:'MUC',name:'Munich Airport',city:'Munich',country:'DE',aliases:['munich','munchen']},
+  {iata:'MAD',name:'Adolfo Suárez Madrid–Barajas',city:'Madrid',country:'ES',aliases:['madrid','barajas']},
+  {iata:'BCN',name:'Barcelona El Prat',city:'Barcelona',country:'ES',aliases:['barcelona','el prat']},
+  {iata:'FCO',name:'Leonardo da Vinci–Fiumicino',city:'Rome',country:'IT',aliases:['rome','fiumicino','roma']},
+  {iata:'MXP',name:'Milan Malpensa',city:'Milan',country:'IT',aliases:['milan','malpensa','milano']},
+  {iata:'ZRH',name:'Zurich Airport',city:'Zurich',country:'CH',aliases:['zurich','switzerland']},
+  {iata:'VIE',name:'Vienna International',city:'Vienna',country:'AT',aliases:['vienna','austria']},
+  {iata:'BRU',name:'Brussels Airport',city:'Brussels',country:'BE',aliases:['brussels','zaventem','belgium']},
+  {iata:'CPH',name:'Copenhagen Airport',city:'Copenhagen',country:'DK',aliases:['copenhagen','kastrup','denmark']},
+  {iata:'ARN',name:'Stockholm Arlanda',city:'Stockholm',country:'SE',aliases:['stockholm','arlanda','sweden']},
+  {iata:'OSL',name:'Oslo Gardermoen',city:'Oslo',country:'NO',aliases:['oslo','gardermoen','norway']},
+  {iata:'HEL',name:'Helsinki-Vantaa',city:'Helsinki',country:'FI',aliases:['helsinki','vantaa','finland']},
+  {iata:'IST',name:'Istanbul Airport',city:'Istanbul',country:'TR',aliases:['istanbul','turkey']},
+  {iata:'ATH',name:'Athens Eleftherios Venizelos',city:'Athens',country:'GR',aliases:['athens','venizelos','greece']},
+  {iata:'DUB',name:'Dublin Airport',city:'Dublin',country:'IE',aliases:['dublin','ireland']},
+  {iata:'LIS',name:'Lisbon Humberto Delgado',city:'Lisbon',country:'PT',aliases:['lisbon','portugal']},
+  {iata:'NRT',name:'Narita International',city:'Tokyo',country:'JP',aliases:['tokyo','narita','japan']},
+  {iata:'HND',name:'Tokyo Haneda',city:'Tokyo',country:'JP',aliases:['haneda','tokyo haneda']},
+  {iata:'KIX',name:'Kansai International',city:'Osaka',country:'JP',aliases:['osaka','kansai']},
+  {iata:'ICN',name:'Incheon International',city:'Seoul',country:'KR',aliases:['seoul','incheon','korea']},
+  {iata:'PEK',name:'Beijing Capital International',city:'Beijing',country:'CN',aliases:['beijing','pekin','china']},
+  {iata:'PVG',name:'Shanghai Pudong International',city:'Shanghai',country:'CN',aliases:['shanghai','pudong']},
+  {iata:'HKG',name:'Hong Kong International',city:'Hong Kong',country:'HK',aliases:['hong kong','hongkong']},
+  {iata:'SIN',name:'Singapore Changi',city:'Singapore',country:'SG',aliases:['singapore','changi']},
+  {iata:'BKK',name:'Suvarnabhumi Airport',city:'Bangkok',country:'TH',aliases:['bangkok','suvarnabhumi','thailand']},
+  {iata:'KUL',name:'Kuala Lumpur International',city:'Kuala Lumpur',country:'MY',aliases:['kuala lumpur','kl','klia','malaysia']},
+  {iata:'DEL',name:'Indira Gandhi International',city:'New Delhi',country:'IN',aliases:['delhi','new delhi','indira gandhi','india']},
+  {iata:'BOM',name:'Chhatrapati Shivaji Maharaj',city:'Mumbai',country:'IN',aliases:['mumbai','bombay','shivaji']},
+  {iata:'DXB',name:'Dubai International',city:'Dubai',country:'AE',aliases:['dubai','uae']},
+  {iata:'AUH',name:'Abu Dhabi International',city:'Abu Dhabi',country:'AE',aliases:['abu dhabi']},
+  {iata:'DOH',name:'Hamad International',city:'Doha',country:'QA',aliases:['doha','hamad','qatar']},
+  {iata:'TLV',name:'Ben Gurion International',city:'Tel Aviv',country:'IL',aliases:['tel aviv','ben gurion','israel']},
+  {iata:'YYZ',name:'Toronto Pearson International',city:'Toronto',country:'CA',aliases:['toronto','pearson','canada']},
+  {iata:'YUL',name:'Montréal–Trudeau',city:'Montreal',country:'CA',aliases:['montreal','trudeau']},
+  {iata:'YVR',name:'Vancouver International',city:'Vancouver',country:'CA',aliases:['vancouver']},
+  {iata:'MEX',name:'Mexico City International',city:'Mexico City',country:'MX',aliases:['mexico city','mexico','benito juarez']},
+  {iata:'GRU',name:'São Paulo–Guarulhos',city:'São Paulo',country:'BR',aliases:['sao paulo','guarulhos','brazil']},
+  {iata:'GIG',name:'Rio de Janeiro–Galeão',city:'Rio de Janeiro',country:'BR',aliases:['rio','galeao','rio de janeiro']},
+  {iata:'BOG',name:'El Dorado International',city:'Bogotá',country:'CO',aliases:['bogota','el dorado','colombia']},
+  {iata:'SCL',name:'Arturo Merino Benítez',city:'Santiago',country:'CL',aliases:['santiago','chile']},
+  {iata:'EZE',name:'Buenos Aires Ministro Pistarini',city:'Buenos Aires',country:'AR',aliases:['buenos aires','pistarini','argentina']},
+  {iata:'JNB',name:'OR Tambo International',city:'Johannesburg',country:'ZA',aliases:['johannesburg','or tambo','south africa','joburg']},
+  {iata:'CPT',name:'Cape Town International',city:'Cape Town',country:'ZA',aliases:['cape town']},
+  {iata:'NBO',name:'Jomo Kenyatta International',city:'Nairobi',country:'KE',aliases:['nairobi','kenyatta','kenya']},
+  {iata:'CAI',name:'Cairo International',city:'Cairo',country:'EG',aliases:['cairo','egypt']},
+  {iata:'LOS',name:'Murtala Muhammed International',city:'Lagos',country:'NG',aliases:['lagos','murtala','nigeria']},
+  {iata:'ACC',name:'Kotoka International',city:'Accra',country:'GH',aliases:['accra','kotoka','ghana']},
+  {iata:'ADD',name:'Addis Ababa Bole International',city:'Addis Ababa',country:'ET',aliases:['addis ababa','bole','ethiopia']},
+  {iata:'SYD',name:'Sydney Kingsford Smith',city:'Sydney',country:'AU',aliases:['sydney','kingsford','australia']},
+  {iata:'MEL',name:'Melbourne Airport',city:'Melbourne',country:'AU',aliases:['melbourne','tullamarine']},
+  {iata:'AKL',name:'Auckland Airport',city:'Auckland',country:'NZ',aliases:['auckland','new zealand']},
+    {iata:'ABQ',name:'Albuquerque International Sunport',city:'Albuquerque',country:'US',aliases:['albuquerque','sunport','new mexico']},
+  {iata:'ALB',name:'Albany International Airport',city:'Albany',country:'US',aliases:['albany','new york capital region']},
+  {iata:'ANC',name:'Ted Stevens Anchorage International',city:'Anchorage',country:'US',aliases:['anchorage','alaska']},
+  {iata:'BDL',name:'Bradley International Airport',city:'Hartford',country:'US',aliases:['hartford','bradley','connecticut']},
+  {iata:'BUF',name:'Buffalo Niagara International',city:'Buffalo',country:'US',aliases:['buffalo','niagara','upstate new york']},
+  {iata:'BUR',name:'Hollywood Burbank Airport',city:'Burbank',country:'US',aliases:['burbank','hollywood burbank','los angeles burbank']},
+  {iata:'CHS',name:'Charleston International Airport',city:'Charleston',country:'US',aliases:['charleston','south carolina']},
+  {iata:'CLE',name:'Cleveland Hopkins International',city:'Cleveland',country:'US',aliases:['cleveland','hopkins','ohio']},
+  {iata:'CMH',name:'John Glenn Columbus International',city:'Columbus',country:'US',aliases:['columbus','ohio','john glenn']},
+  {iata:'CVG',name:'Cincinnati/Northern Kentucky International',city:'Cincinnati',country:'US',aliases:['cincinnati','northern kentucky','cvg']},
+  {iata:'DAL',name:'Dallas Love Field',city:'Dallas',country:'US',aliases:['dallas love','love field']},
+  {iata:'ELP',name:'El Paso International Airport',city:'El Paso',country:'US',aliases:['el paso','texas']},
+  {iata:'FLL',name:'Fort Lauderdale-Hollywood International',city:'Fort Lauderdale',country:'US',aliases:['fort lauderdale','hollywood florida','south florida']},
+  {iata:'JAX',name:'Jacksonville International Airport',city:'Jacksonville',country:'US',aliases:['jacksonville','florida']},
+  {iata:'MEM',name:'Memphis International Airport',city:'Memphis',country:'US',aliases:['memphis','tennessee']},
+  {iata:'MSY',name:'Louis Armstrong New Orleans International',city:'New Orleans',country:'US',aliases:['new orleans','louis armstrong','nola']},
+  {iata:'OAK',name:'Oakland International Airport',city:'Oakland',country:'US',aliases:['oakland','bay area']},
+  {iata:'OKC',name:'Will Rogers World Airport',city:'Oklahoma City',country:'US',aliases:['oklahoma city','will rogers']},
+  {iata:'OMA',name:'Eppley Airfield',city:'Omaha',country:'US',aliases:['omaha','nebraska']},
+  {iata:'ONT',name:'Ontario International Airport',city:'Ontario',country:'US',aliases:['ontario california','inland empire']},
+  {iata:'PBI',name:'Palm Beach International Airport',city:'West Palm Beach',country:'US',aliases:['palm beach','west palm beach']},
+  {iata:'PIT',name:'Pittsburgh International Airport',city:'Pittsburgh',country:'US',aliases:['pittsburgh','pennsylvania']},
+  {iata:'RDU',name:'Raleigh-Durham International Airport',city:'Raleigh / Durham',country:'US',aliases:['raleigh','durham','research triangle']},
+  {iata:'RIC',name:'Richmond International Airport',city:'Richmond',country:'US',aliases:['richmond','virginia']},
+  {iata:'SAT',name:'San Antonio International Airport',city:'San Antonio',country:'US',aliases:['san antonio','texas']},
+  {iata:'SJC',name:'Norman Y. Mineta San José International',city:'San Jose',country:'US',aliases:['san jose','silicon valley','mineta']},
+  {iata:'SMF',name:'Sacramento International Airport',city:'Sacramento',country:'US',aliases:['sacramento','california capital']},
+  {iata:'STL',name:'St. Louis Lambert International',city:'St. Louis',country:'US',aliases:['st louis','lambert','missouri']},
+  {iata:'RSW',name:'Southwest Florida International',city:'Fort Myers',country:'US',aliases:['fort myers','southwest florida']},
+  {iata:'SNA',name:'John Wayne Airport',city:'Orange County',country:'US',aliases:['orange county','john wayne','santa ana']},
 
+  {iata:'BER',name:'Berlin Brandenburg Airport',city:'Berlin',country:'DE',aliases:['berlin','brandenburg','germany']},
+  {iata:'DUS',name:'Düsseldorf Airport',city:'Düsseldorf',country:'DE',aliases:['dusseldorf','duesseldorf','germany']},
+  {iata:'HAM',name:'Hamburg Airport',city:'Hamburg',country:'DE',aliases:['hamburg','germany']},
+  {iata:'MAN',name:'Manchester Airport',city:'Manchester',country:'GB',aliases:['manchester','uk','england']},
+  {iata:'EDI',name:'Edinburgh Airport',city:'Edinburgh',country:'GB',aliases:['edinburgh','scotland']},
+  {iata:'GLA',name:'Glasgow Airport',city:'Glasgow',country:'GB',aliases:['glasgow','scotland']},
+  {iata:'NCE',name:'Nice Côte d’Azur Airport',city:'Nice',country:'FR',aliases:['nice','cote azur','french riviera']},
+  {iata:'LYS',name:'Lyon-Saint Exupéry Airport',city:'Lyon',country:'FR',aliases:['lyon','saint exupery']},
+  {iata:'MRS',name:'Marseille Provence Airport',city:'Marseille',country:'FR',aliases:['marseille','provence']},
+  {iata:'NAP',name:'Naples International Airport',city:'Naples',country:'IT',aliases:['naples','napoli','italy']},
+  {iata:'VCE',name:'Venice Marco Polo Airport',city:'Venice',country:'IT',aliases:['venice','marco polo','venezia']},
+  {iata:'PMI',name:'Palma de Mallorca Airport',city:'Palma',country:'ES',aliases:['palma','mallorca','spain']},
+  {iata:'AGP',name:'Málaga-Costa del Sol Airport',city:'Málaga',country:'ES',aliases:['malaga','costa del sol','spain']},
+  {iata:'SVQ',name:'Seville Airport',city:'Seville',country:'ES',aliases:['seville','sevilla','spain']},
+  {iata:'GVA',name:'Geneva Airport',city:'Geneva',country:'CH',aliases:['geneva','switzerland']},
+  {iata:'PRG',name:'Václav Havel Airport Prague',city:'Prague',country:'CZ',aliases:['prague','czech republic']},
+  {iata:'WAW',name:'Warsaw Chopin Airport',city:'Warsaw',country:'PL',aliases:['warsaw','chopin','poland']},
+  {iata:'BUD',name:'Budapest Ferenc Liszt International',city:'Budapest',country:'HU',aliases:['budapest','hungary']},
 
-class TripState(BaseModel):
-    # Origin
-    origin_text: Optional[str] = None
-    origin_zip: Optional[str] = None
+  {iata:'TPE',name:'Taiwan Taoyuan International Airport',city:'Taipei',country:'TW',aliases:['taipei','taoyuan','taiwan']},
+  {iata:'CTS',name:'New Chitose Airport',city:'Sapporo',country:'JP',aliases:['sapporo','new chitose','hokkaido']},
+  {iata:'FUK',name:'Fukuoka Airport',city:'Fukuoka',country:'JP',aliases:['fukuoka','japan']},
+  {iata:'NGO',name:'Chubu Centrair International',city:'Nagoya',country:'JP',aliases:['nagoya','centrair','japan']},
+  {iata:'SGN',name:'Tan Son Nhat International',city:'Ho Chi Minh City',country:'VN',aliases:['ho chi minh city','saigon','vietnam']},
+  {iata:'HAN',name:'Noi Bai International Airport',city:'Hanoi',country:'VN',aliases:['hanoi','vietnam']},
+  {iata:'MNL',name:'Ninoy Aquino International Airport',city:'Manila',country:'PH',aliases:['manila','philippines']},
+  {iata:'DPS',name:'Ngurah Rai International Airport',city:'Bali',country:'ID',aliases:['bali','denpasar','indonesia']},
+  {iata:'CGK',name:'Soekarno-Hatta International Airport',city:'Jakarta',country:'ID',aliases:['jakarta','soekarno hatta','indonesia']},
+  {iata:'COK',name:'Cochin International Airport',city:'Kochi',country:'IN',aliases:['kochi','cochin','india']},
+  {iata:'BLR',name:'Kempegowda International Airport',city:'Bengaluru',country:'IN',aliases:['bangalore','bengaluru','india']},
+  {iata:'MAA',name:'Chennai International Airport',city:'Chennai',country:'IN',aliases:['chennai','madras','india']},
+  {iata:'HYD',name:'Rajiv Gandhi International Airport',city:'Hyderabad',country:'IN',aliases:['hyderabad','india']},
+  {iata:'CCU',name:'Netaji Subhas Chandra Bose International',city:'Kolkata',country:'IN',aliases:['kolkata','calcutta','india']},
 
-    # Destination
-    destination_city: Optional[str] = None
-    destination_country: Optional[str] = None
-    destination_region: Optional[str] = None
+  {iata:'CMN',name:'Mohammed V International Airport',city:'Casablanca',country:'MA',aliases:['casablanca','morocco']},
+  {iata:'RAK',name:'Marrakesh Menara Airport',city:'Marrakesh',country:'MA',aliases:['marrakesh','marrakech','morocco']},
+  {iata:'DAR',name:'Julius Nyerere International Airport',city:'Dar es Salaam',country:'TZ',aliases:['dar es salaam','tanzania']},
+  {iata:'KGL',name:'Kigali International Airport',city:'Kigali',country:'RW',aliases:['kigali','rwanda']},
+  {iata:'ZNZ',name:'Abeid Amani Karume International',city:'Zanzibar',country:'TZ',aliases:['zanzibar','tanzania']},
 
-    destination_preferences: list[str] = Field(default_factory=list)
+  {iata:'PER',name:'Perth Airport',city:'Perth',country:'AU',aliases:['perth','australia']},
+  {iata:'BNE',name:'Brisbane Airport',city:'Brisbane',country:'AU',aliases:['brisbane','australia']},
+  {iata:'ADL',name:'Adelaide Airport',city:'Adelaide',country:'AU',aliases:['adelaide','australia']},
+  {iata:'WLG',name:'Wellington Airport',city:'Wellington',country:'NZ',aliases:['wellington','new zealand']},
+  {iata:'CHC',name:'Christchurch Airport',city:'Christchurch',country:'NZ',aliases:['christchurch','new zealand']},
 
-    # Dates
-    date_start: Optional[str] = None
-    date_end: Optional[str] = None
+  {iata:'YOW',name:'Ottawa Macdonald–Cartier International',city:'Ottawa',country:'CA',aliases:['ottawa','canada']},
+  {iata:'YYC',name:'Calgary International Airport',city:'Calgary',country:'CA',aliases:['calgary','canada']},
+  {iata:'YEG',name:'Edmonton International Airport',city:'Edmonton',country:'CA',aliases:['edmonton','canada']},
+  {iata:'YYT',name:"St. John's International Airport",city:"St. John's",country:'CA',aliases:["st john's","newfoundland","canada"]},
 
-    # Budget
-    budget_usd: Optional[float] = None
-    budget_is_per_person: Optional[bool] = None
+  {iata:'LIM',name:'Jorge Chávez International Airport',city:'Lima',country:'PE',aliases:['lima','peru']},
+  {iata:'UIO',name:'Mariscal Sucre International Airport',city:'Quito',country:'EC',aliases:['quito','ecuador']},
+  {iata:'AEP',name:'Jorge Newbery Airfield',city:'Buenos Aires',country:'AR',aliases:['jorge newbery','buenos aires domestic','argentina']},
+  {iata:'PTY',name:'Tocumen International Airport',city:'Panama City',country:'PA',aliases:['panama city','tocumen','panama']},
+  {iata:'SJO',name:'Juan Santamaría International Airport',city:'San José',country:'CR',aliases:['san jose costa rica','costa rica']},
+  {iata:'CUN',name:'Cancún International Airport',city:'Cancún',country:'MX',aliases:['cancun','mexico']},
+  {iata:'GDL',name:'Guadalajara International Airport',city:'Guadalajara',country:'MX',aliases:['guadalajara','mexico']},
+  {iata:'SJU',name:'Luis Muñoz Marín International',city:'San Juan',country:'PR',aliases:['san juan','puerto rico']},
+  {iata:'AAL',name:'Aalborg Airport',city:'Aalborg',country:'DK',aliases:['aalborg','denmark']},
+  {iata:'AAR',name:'Aarhus Airport',city:'Aarhus',country:'DK',aliases:['aarhus','denmark']},
+  {iata:'ACE',name:'Lanzarote Airport',city:'Lanzarote',country:'ES',aliases:['lanzarote','canary islands','spain']},
+  {iata:'ADB',name:'İzmir Adnan Menderes Airport',city:'Izmir',country:'TR',aliases:['izmir','turkey','adnan menderes']},
+  {iata:'ALG',name:'Houari Boumediene Airport',city:'Algiers',country:'DZ',aliases:['algiers','algeria']},
+  {iata:'AMM',name:'Queen Alia International Airport',city:'Amman',country:'JO',aliases:['amman','jordan']},
+  {iata:'ASU',name:'Silvio Pettirossi International Airport',city:'Asunción',country:'PY',aliases:['asuncion','paraguay']},
+  {iata:'AUA',name:'Queen Beatrix International Airport',city:'Aruba',country:'AW',aliases:['aruba']},
+  {iata:'AYT',name:'Antalya Airport',city:'Antalya',country:'TR',aliases:['antalya','turkey']},
+  {iata:'BAH',name:'Bahrain International Airport',city:'Manama',country:'BH',aliases:['bahrain','manama']},
+  {iata:'BEG',name:'Belgrade Nikola Tesla Airport',city:'Belgrade',country:'RS',aliases:['belgrade','serbia','nikola tesla']},
+  {iata:'BGI',name:'Grantley Adams International Airport',city:'Bridgetown',country:'BB',aliases:['barbados','bridgetown']},
+  {iata:'BGO',name:'Bergen Airport',city:'Bergen',country:'NO',aliases:['bergen','norway']},
+  {iata:'BLL',name:'Billund Airport',city:'Billund',country:'DK',aliases:['billund','denmark']},
+  {iata:'BLQ',name:'Bologna Guglielmo Marconi Airport',city:'Bologna',country:'IT',aliases:['bologna','italy']},
+  {iata:'BOD',name:'Bordeaux Airport',city:'Bordeaux',country:'FR',aliases:['bordeaux','france']},
+  {iata:'BOI',name:'Boise Airport',city:'Boise',country:'US',aliases:['boise','idaho']},
+  {iata:'BRI',name:'Bari Karol Wojtyła Airport',city:'Bari',country:'IT',aliases:['bari','italy']},
+  {iata:'BSB',name:'Brasília International Airport',city:'Brasília',country:'BR',aliases:['brasilia','brazil']},
+  {iata:'BTS',name:'Bratislava Airport',city:'Bratislava',country:'SK',aliases:['bratislava','slovakia']},
+  {iata:'BTV',name:'Burlington International Airport',city:'Burlington',country:'US',aliases:['burlington','vermont']},
+  {iata:'CAK',name:'Akron-Canton Airport',city:'Akron / Canton',country:'US',aliases:['akron','canton','ohio']},
+  {iata:'CBR',name:'Canberra Airport',city:'Canberra',country:'AU',aliases:['canberra','australia']},
+  {iata:'CEB',name:'Mactan-Cebu International Airport',city:'Cebu',country:'PH',aliases:['cebu','philippines']},
+  {iata:'CFE',name:'Clermont-Ferrand Auvergne Airport',city:'Clermont-Ferrand',country:'FR',aliases:['clermont ferrand','france']},
+  {iata:'CNX',name:'Chiang Mai International Airport',city:'Chiang Mai',country:'TH',aliases:['chiang mai','thailand']},
+  {iata:'COR',name:'Ingeniero Aeronáutico Ambrosio L.V. Taravella',city:'Córdoba',country:'AR',aliases:['cordoba','argentina']},
+  {iata:'COS',name:'Colorado Springs Airport',city:'Colorado Springs',country:'US',aliases:['colorado springs','colorado']},
+  {iata:'CRK',name:'Clark International Airport',city:'Clark',country:'PH',aliases:['clark','philippines']},
+  {iata:'CWB',name:'Afonso Pena International Airport',city:'Curitiba',country:'BR',aliases:['curitiba','brazil']},
+  {iata:'DMM',name:'King Fahd International Airport',city:'Dammam',country:'SA',aliases:['dammam','saudi arabia']},
+  {iata:'DRW',name:'Darwin International Airport',city:'Darwin',country:'AU',aliases:['darwin','australia']},
+  {iata:'DUR',name:'King Shaka International Airport',city:'Durban',country:'ZA',aliases:['durban','south africa']},
+  {iata:'EIN',name:'Eindhoven Airport',city:'Eindhoven',country:'NL',aliases:['eindhoven','netherlands']},
+  {iata:'FAO',name:'Faro Airport',city:'Faro',country:'PT',aliases:['faro','portugal','algarve']},
+  {iata:'FLN',name:'Hercílio Luz International Airport',city:'Florianópolis',country:'BR',aliases:['florianopolis','brazil']},
+  {iata:'FOR',name:'Pinto Martins International Airport',city:'Fortaleza',country:'BR',aliases:['fortaleza','brazil']},
+  {iata:'GDN',name:'Gdańsk Lech Wałęsa Airport',city:'Gdańsk',country:'PL',aliases:['gdansk','poland']},
+  {iata:'GOT',name:'Göteborg Landvetter Airport',city:'Gothenburg',country:'SE',aliases:['gothenburg','goteborg','sweden']},
+  {iata:'GUA',name:'La Aurora International Airport',city:'Guatemala City',country:'GT',aliases:['guatemala city','guatemala']},
+  {iata:'HBA',name:'Hobart Airport',city:'Hobart',country:'AU',aliases:['hobart','tasmania','australia']},
+  {iata:'HER',name:'Heraklion International Airport',city:'Heraklion',country:'GR',aliases:['heraklion','crete','greece']},
+  {iata:'HNL',name:'Daniel K. Inouye International Airport',city:'Honolulu',country:'US',aliases:['honolulu','hawaii','oahu']},
+  {iata:'IBZ',name:'Ibiza Airport',city:'Ibiza',country:'ES',aliases:['ibiza','spain']},
+  {iata:'INV',name:'Inverness Airport',city:'Inverness',country:'GB',aliases:['inverness','scotland']},
+  {iata:'JAN',name:'Jackson-Medgar Wiley Evers International',city:'Jackson',country:'US',aliases:['jackson mississippi','mississippi']},
+  {iata:'JED',name:'King Abdulaziz International Airport',city:'Jeddah',country:'SA',aliases:['jeddah','saudi arabia']},
+  {iata:'JTR',name:'Santorini Airport',city:'Santorini',country:'GR',aliases:['santorini','greece']},
+  {iata:'KGS',name:'Kos International Airport',city:'Kos',country:'GR',aliases:['kos','greece']},
+  {iata:'KOA',name:'Ellison Onizuka Kona International',city:'Kailua-Kona',country:'US',aliases:['kona','hawaii','big island']},
+  {iata:'KRK',name:'John Paul II International Airport Kraków-Balice',city:'Kraków',country:'PL',aliases:['krakow','poland']},
+  {iata:'KTM',name:'Tribhuvan International Airport',city:'Kathmandu',country:'NP',aliases:['kathmandu','nepal']},
+  {iata:'LBA',name:'Leeds Bradford Airport',city:'Leeds',country:'GB',aliases:['leeds','bradford','england']},
+  {iata:'LEJ',name:'Leipzig/Halle Airport',city:'Leipzig',country:'DE',aliases:['leipzig','halle','germany']},
+  {iata:'LPA',name:'Gran Canaria Airport',city:'Las Palmas',country:'ES',aliases:['gran canaria','las palmas','spain']},
+  {iata:'LPL',name:'Liverpool John Lennon Airport',city:'Liverpool',country:'GB',aliases:['liverpool','england']},
+  {iata:'LRM',name:'La Romana International Airport',city:'La Romana',country:'DO',aliases:['la romana','dominican republic']},
+  {iata:'LXR',name:'Luxor International Airport',city:'Luxor',country:'EG',aliases:['luxor','egypt']},
+  {iata:'MAD',name:'Adolfo Suárez Madrid–Barajas',city:'Madrid',country:'ES',aliases:['madrid','barajas']},
+  {iata:'MBA',name:'Moi International Airport',city:'Mombasa',country:'KE',aliases:['mombasa','kenya']},
+  {iata:'MED',name:'Prince Mohammad bin Abdulaziz Airport',city:'Medina',country:'SA',aliases:['medina','saudi arabia']},
+  {iata:'MGA',name:'Augusto C. Sandino International Airport',city:'Managua',country:'NI',aliases:['managua','nicaragua']},
+  {iata:'MLE',name:'Velana International Airport',city:'Malé',country:'MV',aliases:['male','maldives']},
+  {iata:'MLI',name:'Quad City International Airport',city:'Moline',country:'US',aliases:['moline','quad cities','illinois']},
+  {iata:'MLN',name:'Melilla Airport',city:'Melilla',country:'ES',aliases:['melilla','spain']},
+  {iata:'MPL',name:'Montpellier–Méditerranée Airport',city:'Montpellier',country:'FR',aliases:['montpellier','france']},
+  {iata:'MZT',name:'General Rafael Buelna International',city:'Mazatlán',country:'MX',aliases:['mazatlan','mexico']},
+  {iata:'NAS',name:'Lynden Pindling International Airport',city:'Nassau',country:'BS',aliases:['nassau','bahamas']},
+  {iata:'NCL',name:'Newcastle International Airport',city:'Newcastle',country:'GB',aliases:['newcastle','england']},
+  {iata:'OPO',name:'Francisco Sá Carneiro Airport',city:'Porto',country:'PT',aliases:['porto','portugal']},
+  {iata:'ORK',name:'Cork Airport',city:'Cork',country:'IE',aliases:['cork','ireland']},
+  {iata:'OTP',name:'Henri Coandă International Airport',city:'Bucharest',country:'RO',aliases:['bucharest','romania','otopeni']},
+  {iata:'PAP',name:'Toussaint Louverture International',city:'Port-au-Prince',country:'HT',aliases:['port au prince','haiti']},
+  {iata:'PDL',name:'João Paulo II Airport',city:'Ponta Delgada',country:'PT',aliases:['ponta delgada','azores','portugal']},
+  {iata:'PNS',name:'Pensacola International Airport',city:'Pensacola',country:'US',aliases:['pensacola','florida']},
+  {iata:'PSA',name:'Pisa International Airport',city:'Pisa',country:'IT',aliases:['pisa','italy']},
+  {iata:'PUJ',name:'Punta Cana International Airport',city:'Punta Cana',country:'DO',aliases:['punta cana','dominican republic']},
+  {iata:'QRO',name:'Querétaro Intercontinental Airport',city:'Querétaro',country:'MX',aliases:['queretaro','mexico']},
+  {iata:'RIX',name:'Riga International Airport',city:'Riga',country:'LV',aliases:['riga','latvia']},
+  {iata:'RMF',name:'Marsa Alam International Airport',city:'Marsa Alam',country:'EG',aliases:['marsa alam','egypt']},
+  {iata:'ROA',name:'Roanoke–Blacksburg Regional Airport',city:'Roanoke',country:'US',aliases:['roanoke','virginia']},
+  {iata:'ROP',name:'Saipan International Airport',city:'Saipan',country:'MP',aliases:['saipan','northern mariana islands']},
+  {iata:'RNO',name:'Reno–Tahoe International Airport',city:'Reno',country:'US',aliases:['reno','tahoe','nevada']},
+  {iata:'SAL',name:'Monseñor Óscar Arnulfo Romero International',city:'San Salvador',country:'SV',aliases:['san salvador','el salvador']},
+  {iata:'SDQ',name:'Las Américas International Airport',city:'Santo Domingo',country:'DO',aliases:['santo domingo','dominican republic']},
+  {iata:'SKG',name:'Thessaloniki Airport',city:'Thessaloniki',country:'GR',aliases:['thessaloniki','greece']},
+  {iata:'SPU',name:'Split Airport',city:'Split',country:'HR',aliases:['split','croatia']},
+  {iata:'STR',name:'Stuttgart Airport',city:'Stuttgart',country:'DE',aliases:['stuttgart','germany']},
+  {iata:'SVG',name:'Stavanger Airport',city:'Stavanger',country:'NO',aliases:['stavanger','norway']},
+  {iata:'TAS',name:'Tashkent International Airport',city:'Tashkent',country:'UZ',aliases:['tashkent','uzbekistan']},
+  {iata:'TFS',name:'Tenerife South Airport',city:'Tenerife',country:'ES',aliases:['tenerife south','canary islands','spain']},
+  {iata:'TIA',name:'Tirana International Airport',city:'Tirana',country:'AL',aliases:['tirana','albania']},
+  {iata:'TLL',name:'Tallinn Airport',city:'Tallinn',country:'EE',aliases:['tallinn','estonia']},
+  {iata:'TRD',name:'Trondheim Airport',city:'Trondheim',country:'NO',aliases:['trondheim','norway']},
+  {iata:'TRN',name:'Turin Airport',city:'Turin',country:'IT',aliases:['turin','torino','italy']},
+  {iata:'TUL',name:'Tulsa International Airport',city:'Tulsa',country:'US',aliases:['tulsa','oklahoma']},
+  {iata:'TUS',name:'Tucson International Airport',city:'Tucson',country:'US',aliases:['tucson','arizona']},
+  {iata:'VLC',name:'Valencia Airport',city:'Valencia',country:'ES',aliases:['valencia','spain']},
+  {iata:'VNO',name:'Vilnius Airport',city:'Vilnius',country:'LT',aliases:['vilnius','lithuania']},
+  {iata:'VXO',name:'Växjö Småland Airport',city:'Växjö',country:'SE',aliases:['vaxjo','sweden']},
+  {iata:'WDH',name:'Hosea Kutako International Airport',city:'Windhoek',country:'NA',aliases:['windhoek','namibia']},
+  {iata:'XNA',name:'Northwest Arkansas National Airport',city:'Bentonville',country:'US',aliases:['bentonville','fayetteville','arkansas']},
+  {iata:'ZAD',name:'Zadar Airport',city:'Zadar',country:'HR',aliases:['zadar','croatia']},
+  {iata:'ZAG',name:'Franjo Tuđman Airport',city:'Zagreb',country:'HR',aliases:['zagreb','croatia']}
+];
 
-    # Travelers
-    passengers: Optional[int] = None
-    cabin: Optional[str] = None
+function lev(a,b){
+  const m=a.length,n=b.length;
+  if(!m)return n;if(!n)return m;
+  const dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>j===0?i:i===0?j:0));
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+function aptScore(apt,q){
+  const ql=q.toLowerCase().trim();
+  if(!ql)return 0;
+  const qu=ql.toUpperCase();
+  const il=apt.iata.toLowerCase(),cl=apt.city.toLowerCase(),nl=apt.name.toLowerCase(),al=apt.aliases;
+  if(apt.iata===qu)return 1000;
+  if(il.startsWith(ql))return 900;
+  if(cl.startsWith(ql))return 850;
+  if(nl.startsWith(ql))return 800;
+  if(al.some(a=>a===ql))return 780;
+  if(al.some(a=>a.startsWith(ql)))return 720;
+  if(nl.includes(ql))return 650;
+  if(cl.includes(ql))return 620;
+  if(al.some(a=>a.includes(ql)))return 590;
+  const di=lev(ql,il);
+  if(di<=1)return 500-di*80;
+  if(ql.length>=4){
+    const dc=Math.min(...cl.split(/\s+/).map(t=>lev(ql,t)));
+    if(dc<=2)return 400-dc*60;
+    const toks=nl.split(/\s+/).filter(t=>t.length>3);
+    const dn=toks.length?Math.min(...toks.map(t=>lev(ql,t))):99;
+    if(dn<=2)return 300-dn*50;
+  }
+  return 0;
+}
+function searchApts(q){
+  if(!q||q.trim().length<1)return[];
+  return AIRPORTS.map(a=>({a,s:aptScore(a,q)})).filter(r=>r.s>0)
+    .sort((x,y)=>y.s-x.s).slice(0,7).map(r=>({airport:r.a,score:r.s}));
+}
 
-    # Flight preferences
-    max_stops: Optional[int] = None
-    checked_bags: Optional[int] = None
+const _sel={from:null,to:null};
+const _ddi={from:-1,to:-1};
+const _bt={from:null,to:null};
 
-    # Airport preferences
-    airport_radius_miles: Optional[int] = None
+function onAptInput(f){
+  _sel[f]=null;
+  const p=document.getElementById(f+'-pill');
+  p.textContent='';p.classList.remove('on');
+  renderAptDd(f,searchApts(document.getElementById(f).value));
+}
+function renderAptDd(f,res){
+  const dd=document.getElementById(f+'-dd');
+  const op=document.getElementById(f+'-opts');
+  _ddi[f]=-1;
+  if(!res.length){dd.classList.remove('open');return;}
+  op.innerHTML=res.map(({airport:a,score:s},i)=>{
+    const tag=s>=900?'exact':s>=700?'match':'close';
+    return`<div class="apt-opt" data-i="${i}" onmousedown="pickApt('${f}',${i})">
+      <div class="apt-iata">${a.iata}</div>
+      <div class="apt-info"><div class="apt-name">${a.name}</div><div class="apt-city">${a.city}, ${a.country}</div></div>
+      <span class="apt-tag ${tag}">${tag}</span>
+    </div>`;
+  }).join('');
+  dd._res=res;dd.classList.add('open');
+}
+function pickApt(f,i){
+  const dd=document.getElementById(f+'-dd');
+  const r=(dd._res||[])[i];if(!r)return;
+  const a=r.airport;
+  _sel[f]=a;
+  document.getElementById(f).value=`${a.city} (${a.iata})`;
+  const p=document.getElementById(f+'-pill');
+  p.textContent=a.iata;p.classList.add('on');
+  dd.classList.remove('open');
+}
+function onAptKey(e,f){
+  const dd=document.getElementById(f+'-dd');
+  const res=dd._res||[];
+  const opts=dd.querySelectorAll('.apt-opt');
+  if(!dd.classList.contains('open'))return;
+  if(e.key==='ArrowDown'){e.preventDefault();_ddi[f]=Math.min(_ddi[f]+1,res.length-1);}
+  else if(e.key==='ArrowUp'){e.preventDefault();_ddi[f]=Math.max(_ddi[f]-1,0);}
+  else if(e.key==='Enter'){e.preventDefault();pickApt(f,_ddi[f]>=0?_ddi[f]:0);return;}
+  else if(e.key==='Escape'){dd.classList.remove('open');return;}
+  opts.forEach((o,i)=>o.classList.toggle('focused',i===_ddi[f]));
+  if(opts[_ddi[f]])opts[_ddi[f]].scrollIntoView({block:'nearest'});
+}
+function onAptBlur(f){
+  clearTimeout(_bt[f]);
+  _bt[f]=setTimeout(()=>{
+    document.getElementById(f+'-dd').classList.remove('open');
+    if(!_sel[f]){
+      const res=searchApts(document.getElementById(f).value);
+      if(res.length===1){
+        const dd=document.getElementById(f+'-dd');
+        dd._res=res;
+        pickApt(f,0);
+      }
+    }
+  },200);
+}
+function getIATA(f){
+  if(_sel[f])return _sel[f].iata;
+  const v=document.getElementById(f).value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(v)?v:v;
+}
 
+let FLIGHTS_DB=[];
+let sortMode='score';
+let savedTrips=JSON.parse(localStorage.getItem('skyopt_trips')||'[]');
 
-class AIChatRequest(BaseModel):
-    message: str
+const AIRLINE_META={
+  'japan airlines':{logo:'JL',color:'#e60026'},
+  'ana':{logo:'NH',color:'#13448f'},
+  'all nippon airways':{logo:'NH',color:'#13448f'},
+  'united airlines':{logo:'UA',color:'#005daa'},
+  'delta':{logo:'DL',color:'#e01933'},
+  'american':{logo:'AA',color:'#0078d2'},
+  'american airlines':{logo:'AA',color:'#0078d2'},
+  'jetblue':{logo:'B6',color:'#1d4ed8'},
+  'frontier':{logo:'F9',color:'#16a34a'},
+  'alaska':{logo:'AS',color:'#0f766e'},
+  'korean air':{logo:'KE',color:'#00256c'},
+  'cathay pacific':{logo:'CX',color:'#006564'},
+  'air canada':{logo:'AC',color:'#cc0000'},
+  'asiana airlines':{logo:'OZ',color:'#e77726'},
+  'eva air':{logo:'BR',color:'#007549'},
+  'lufthansa':{logo:'LH',color:'#05164d'},
+  'singapore airlines':{logo:'SQ',color:'#f5a623'},
+    'southwest':{logo:'WN',color:'#304cb2'},
+  'southwest airlines':{logo:'WN',color:'#304cb2'},
+  'spirit':{logo:'NK',color:'#ffd100'},
+  'spirit airlines':{logo:'NK',color:'#ffd100'},
+  'british airways':{logo:'BA',color:'#1d3c78'},
+  'virgin atlantic':{logo:'VS',color:'#d71920'},
+  'air france':{logo:'AF',color:'#002157'},
+  'klm':{logo:'KL',color:'#00a1de'},
+  'iberia':{logo:'IB',color:'#c8102e'},
+  'vueling':{logo:'VY',color:'#f4c300'},
+  'ryanair':{logo:'FR',color:'#073590'},
+  'easyjet':{logo:'U2',color:'#ff6600'},
+  'turkish airlines':{logo:'TK',color:'#c8102e'},
+  'qatar airways':{logo:'QR',color:'#5c0632'},
+  'emirates':{logo:'EK',color:'#d71920'},
+  'etihad':{logo:'EY',color:'#8c6b3f'},
+  'saudia':{logo:'SV',color:'#006c35'},
+  'saudi arabian airlines':{logo:'SV',color:'#006c35'},
+  'air india':{logo:'AI',color:'#d22630'},
+  'indigo':{logo:'6E',color:'#163b8c'},
+  'airasia':{logo:'AK',color:'#d71920'},
+  'thai airways':{logo:'TG',color:'#582c83'},
+  'vietnam airlines':{logo:'VN',color:'#00558c'},
+  'philippine airlines':{logo:'PR',color:'#ce1126'},
+  'malaysia airlines':{logo:'MH',color:'#0033a0'},
+  'garuda indonesia':{logo:'GA',color:'#0093d0'},
+  'china airlines':{logo:'CI',color:'#da1884'},
+  'china eastern':{logo:'MU',color:'#c8102e'},
+  'air china':{logo:'CA',color:'#c8102e'},
+  'china southern':{logo:'CZ',color:'#0085ca'},
+  'hainan airlines':{logo:'HU',color:'#c7a34b'},
+  'jal':{logo:'JL',color:'#e60026'},
+  'japan airlines':{logo:'JL',color:'#e60026'},
+  'peach':{logo:'MM',color:'#e5007d'},
+  'jetstar':{logo:'JQ',color:'#ff6600'},
+  'qantas':{logo:'QF',color:'#e0001b'},
+  'air new zealand':{logo:'NZ',color:'#111111'},
+  'westjet':{logo:'WS',color:'#00a99d'},
+  'porter airlines':{logo:'PD',color:'#2e3192'},
+  'aeromexico':{logo:'AM',color:'#0b2343'},
+  'avianca':{logo:'AV',color:'#e10600'},
+  'latam':{logo:'LA',color:'#6f2c91'},
+  'copa airlines':{logo:'CM',color:'#00529b'},
+  'gol':{logo:'G3',color:'#ff6b00'},
+  'azul':{logo:'AD',color:'#0033a1'},
+  'caribbean airlines':{logo:'BW',color:'#003b7a'},
+  'ethiopian airlines':{logo:'ET',color:'#078930'},
+  'kenya airways':{logo:'KQ',color:'#c8102e'},
+  'royal air maroc':{logo:'AT',color:'#d4002a'},
+  'egyptair':{logo:'MS',color:'#003b7a'},
+  'airlink':{logo:'4Z',color:'#f58220'},
+  'fiji airways':{logo:'FJ',color:'#00a3e0'},
+  'hawaiian airlines':{logo:'HA',color:'#7b2d8e'},
+  'icelandair':{logo:'FI',color:'#003897'},
+  's7 airlines':{logo:'S7',color:'#9acd32'},
+  'lot polish airlines':{logo:'LO',color:'#003da5'},
+  'tap air portugal':{logo:'TP',color:'#006847'},
+  'finnair':{logo:'AY',color:'#002f6c'},
+  'sas':{logo:'SK',color:'#00205b'},
+  'norwegian':{logo:'DY',color:'#d81939'},
+  'brussels airlines':{logo:'SN',color:'#2d2926'},
+  'austrian airlines':{logo:'OS',color:'#d71920'},
+  'swiss':{logo:'LX',color:'#d52b1e'},
+  'eurowings':{logo:'EW',color:'#7a1f5c'},
+  'air europa':{logo:'UX',color:'#0033a0'},
+  'wizz air':{logo:'W6',color:'#c6007e'},
+  'croatia airlines':{logo:'OU',color:'#003893'},
+  'air serbia':{logo:'JU',color:'#00205b'},
+  'el al':{logo:'LY',color:'#0038a8'},
+  'oman air':{logo:'WY',color:'#b5985a'},
+  'gulf air':{logo:'GF',color:'#c8a951'},
+  'flydubai':{logo:'FZ',color:'#1f70c1'},
+  'pegasus':{logo:'PC',color:'#ffcc00'},
+  'sun country':{logo:'SY',color:'#f58220'},
+  'allegiant':{logo:'G4',color:'#ff7f32'}
+};
+function airlineMeta(name){
+  const l=(name||'').toLowerCase();
+  for(const[k,v]of Object.entries(AIRLINE_META))if(l.includes(k))return v;
+  return{logo:(name||'??').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase()||'??',color:'#94a3b8'};
+}
 
-    state: TripState = Field(
-        default_factory=TripState
-    )
+function switchView(name,btn){
+  ['search','trips','analytics'].forEach(v=>{
+    const el=document.getElementById('view-'+v);
+    if(el)el.style.display=v===name?'':'none';
+  });
+  document.querySelectorAll('.nav-link').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  if(name==='trips')renderTrips();
+  if(name==='analytics')renderAnalytics();
+}
 
+function handleTripTypeChange() {
+  const tripType = document.getElementById('tripType').value;
+  const returnGroup = document.getElementById('returnGroup');
+  const multiSecondDepartGroup = document.getElementById('multiSecondDepartGroup');
 
-class AIChatResponse(BaseModel):
-    message: str
-    state: TripState
-    ready_to_search: bool
+  returnGroup.style.display = tripType === 'roundtrip' ? '' : 'none';
+  multiSecondDepartGroup.style.display = tripType === 'multi' ? '' : 'none';
+}
 
-    missing_fields: list[str] = Field(
-        default_factory=list
-    )
+function fmtDur(m){if(typeof m!=='number'||isNaN(m)||m<=0)return'—';return`${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;}
+function parseDur(v){if(typeof v==='number')return v;const s=String(v||'').trim();if(/^\d+$/.test(s))return +s;const hm=s.match(/(\d+)\s*h\s*(\d+)?\s*m?/i);if(hm)return +hm[1]*60+(+hm[2]||0);const iso=s.match(/PT(?:(\d+)H)?(?:(\d+)M)?/i);if(iso)return +(iso[1]||0)*60+(+iso[2]||0);return 0;}
+function xTime(v){if(!v)return'--:--';const d=new Date(String(v).replace(' ','T'));if(isNaN(d))return String(v).slice(11,16)||v;return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+function fmtDT(v){if(!v)return'—';const d=new Date(String(v).replace(' ','T'));if(isNaN(d))return v;return d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 
+function normalizeFlights(flights){
+  return flights.map((f,i)=>{
+    const m=airlineMeta(f.airline||'Unknown');
+    return{
+      id:i+1,
+      source:f.source||'serp',
+      airline:f.airline||'Unknown',
+      code:f.flight_code||m.logo,
+      dep:xTime(f.dep_time),
+      arr:xTime(f.arr_time),
+      stops:+(f.stops||0),
+      duration:parseDur(f.duration_mins??f.duration),
+      price:+(f.price||0),
+      logo:m.logo,
+      color:m.color,
+      logoUrl:f.logo||'',
+      depRaw:f.dep_time||'',
+      arrRaw:f.arr_time||'',
+      extensions:f.extensions||[],
+      fareName:f.fare_name||'',
+      carbonEmissions:f.carbon_emissions||null,
+      layovers:f.layovers||[],
+      legs:f.legs||[],
+    };
+  }).filter(f=>f.price>0);
+}
 
-# ============================================================
-# ROOT
-# ============================================================
+function calcScores(fl){
+  if(!fl.length)return[];
+  const wP=+document.getElementById('wPrice').value/100;
+  const wS=+document.getElementById('wStops').value/100;
+  const wD=+document.getElementById('wDuration').value/100;
+  const ps=fl.map(f=>f.price),ss=fl.map(f=>f.stops),ds=fl.map(f=>f.duration);
+  const[mnP,mxP]=[Math.min(...ps),Math.max(...ps)];
+  const[mnS,mxS]=[Math.min(...ss),Math.max(...ss)];
+  const[mnD,mxD]=[Math.min(...ds),Math.max(...ds)];
+  return fl.map(f=>{
+    const nP=(f.price-mnP)/(mxP-mnP||1),nS=(f.stops-mnS)/(mxS-mnS||1),nD=(f.duration-mnD)/(mxD-mnD||1);
+    return{...f,score:+((10-(nP*wP+nS*wS+nD*wD)*10).toFixed(1)),nP,nS,nD};
+  });
+}
+function sortFlights(fl){const fn={score:(a,b)=>b.score-a.score,price:(a,b)=>a.price-b.price,duration:(a,b)=>a.duration-b.duration,stops:(a,b)=>a.stops-b.stops};return[...fl].sort(fn[sortMode]);}
+function setSortMode(m,btn){sortMode=m;document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');recalcScores();}
+function updateWeight(id){document.getElementById(id+'-val').textContent=document.getElementById(id).value+'%';}
 
-@app.get("/")
-def root():
-    return {
-        "message": "SkyOpt IQ backend is running",
-        "version": "2.0.0",
-        "services": {
-            "flight_search": True,
-            "ai_chat": bool(OPENAI_API_KEY),
-        },
+function srcBadge(s){return`<span class="source-badge">${{serp:'Google Flights',amadeus:'Amadeus',sky:'Skyscanner'}[s]||s}</span>`;}
+function stopLbl(n){if(n===0)return'<span class="route-stop stop-nonstop">Nonstop</span>';if(n===1)return'<span class="route-stop stop-one">1 stop</span>';return`<span class="route-stop stop-two">${n} stops</span>`;}
+function scCls(s){return s>=8.5?'score-high':s>=7?'score-med':'score-low';}
+function logoHtml(f){return f.logoUrl?`<img src="${f.logoUrl}" alt="${f.airline}" style="width:24px;height:24px;object-fit:contain;">`:f.logo;}
+
+function renderFlights(fl){
+  const el=document.getElementById('flightResults');
+  const frm=getIATA('from')||'ORG',to=getIATA('to')||'DST';
+  if(!fl.length){el.innerHTML='<div class="message-box">No flights found for this route and date.</div>';return;}
+  el.innerHTML=fl.map((f,i)=>`
+    <div class="flight-card ${i===0?'best':''}" onclick="openModal(${f.id})">
+      <div class="card-inner">
+        <div class="airline-info">
+          <div class="airline-logo">${logoHtml(f)}</div>
+          <div><div class="airline-name">${f.airline}</div><div class="flight-code">${f.code}</div>${srcBadge(f.source)}</div>
+        </div>
+        <div class="route-visual">
+          <div class="airport-block"><div class="airport-time">${f.dep}</div><div class="airport-code">${frm}</div></div>
+          <div class="route-line">
+            <div class="route-duration">${fmtDur(f.duration)}</div>
+            <div class="route-track"><span class="route-plane">✈</span></div>
+            ${stopLbl(f.stops)}
+          </div>
+          <div class="airport-block"><div class="airport-time">${f.arr}</div><div class="airport-code">${to}</div></div>
+        </div>
+        <div class="score-col"><div class="score-ring ${scCls(f.score)}">${f.score}</div><div style="font-size:9px;color:var(--text3);font-family:'Space Mono',monospace;">score</div></div>
+        <div class="price-col">
+          <div class="price-main">$${f.price}</div><div class="price-per">per person</div>
+          <button class="select-btn" onclick="event.stopPropagation();saveTrip(${f.id})">${i===0?'Book Now':'Save Trip'}</button>
+        </div>
+      </div>
+      <div class="score-breakdown">
+        <div class="breakdown-item"><div class="breakdown-label">Price</div><div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round((1-f.nP)*100)}%;background:var(--boeing-blue);"></div></div></div>
+        <div class="breakdown-item"><div class="breakdown-label">Stops</div><div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round((1-f.nS)*100)}%;background:var(--green);"></div></div></div>
+        <div class="breakdown-item"><div class="breakdown-label">Duration</div><div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round((1-f.nD)*100)}%;background:var(--amber);"></div></div></div>
+        <div style="margin-left:auto;font-size:10px;color:var(--text3);">Click card for details</div>
+      </div>
+    </div>`).join('');
+}
+
+function updateStats(fl){
+  if(!fl.length){
+    document.getElementById('statCount').textContent='—';
+    document.getElementById('statLow').textContent='—';
+    document.getElementById('statScore').textContent='—';
+    document.getElementById('statDur').textContent='—';
+    document.getElementById('resultsMetaText').textContent='No results';
+    return;
+  }
+  const ps=fl.map(f=>f.price),ds=fl.map(f=>f.duration).filter(d=>d>0);
+  document.getElementById('statCount').textContent=fl.length;
+  document.getElementById('statLow').textContent='$'+Math.min(...ps);
+  document.getElementById('statScore').textContent=Math.max(...fl.map(f=>f.score)).toFixed(1);
+  document.getElementById('statDur').textContent=ds.length?fmtDur(Math.round(ds.reduce((a,b)=>a+b,0)/ds.length)):'—';
+  document.getElementById('resultsMetaText').textContent=`${fl.length} flights · FastAPI backend`;
+}
+
+function updateInsight(fl){
+  const box=document.getElementById('insightBox');
+  if(!fl.length){box.innerHTML='<strong>Tip:</strong> Search to see optimizer insights.';return;}
+  const best=fl.reduce((a,b)=>a.score>b.score?a:b);
+  const cheap=fl.reduce((a,b)=>a.price<b.price?a:b);
+  const diff=Math.abs(best.price-cheap.price);
+  box.innerHTML=`<strong>Optimizer:</strong> Best overall is <strong>${best.airline}</strong> ($${best.price}, score <strong>${best.score}</strong>).${diff>0?` Cheapest differs by <strong>$${diff}</strong> but scores lower.`:''}`;
+}
+
+function recalcScores(){
+  const s=calcScores(FLIGHTS_DB);
+  renderFlights(sortFlights(s));
+  updateStats(s);
+  updateInsight(s);
+}
+
+async function startSearch(){
+  const from = getIATA('from');
+  const to = getIATA('to');
+  const depdate = document.getElementById('depdate').value;
+  const retdate = document.getElementById('retdate').value;
+  const multiDepdate2 = document.getElementById('multiDepdate2').value;
+  const cabin = document.getElementById('cabin').value;
+  const tripType = document.getElementById('tripType').value;
+
+  if(!from || !to){
+    alert('Please select a valid departure and destination airport.');
+    return;
+  }
+
+  if(!depdate){
+    alert('Please select a departure date.');
+    return;
+  }
+
+  if(tripType === 'roundtrip' && !retdate){
+    alert('Please select a return date.');
+    return;
+  }
+
+  if(tripType === 'multi' && !multiDepdate2){
+    alert('Please select the second departure date.');
+    return;
+  }
+
+  const dl = new Date(depdate + 'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('routeTitle').textContent = `${from} → ${to} · ${dl}`;
+  document.getElementById('resultsMetaText').textContent = 'Fetching…';
+
+  const btn = document.getElementById('searchBtn');
+  btn.classList.add('loading');
+  document.getElementById('loadingState').style.display = 'block';
+  document.getElementById('flightResults').innerHTML = '';
+
+  try{
+    const payload = {
+      trip_type: tripType,
+      origin: from,
+      destination: to,
+      depart_date: depdate,
+      return_date: tripType === 'roundtrip' ? retdate : null,
+      second_depart_date: tripType === 'multi' ? multiDepdate2 : null,
+      cabin,
+      passengers: Number(document.getElementById('pax').value),
+      weight_price: Number(document.getElementById('wPrice').value)/100,
+      weight_stops: Number(document.getElementById('wStops').value)/100,
+      weight_duration: Number(document.getElementById('wDuration').value)/100,
+    };
+
+    const res = await fetch(`${BACKEND_URL}/api/v1/flights/search`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+
+    const rawText = await res.text();
+    let data = {};
+
+    try{
+      data = rawText ? JSON.parse(rawText) : {};
+    }catch{
+      data = {detail: rawText};
     }
 
-
-@app.get("/api/v1/health")
-def health():
-    return {
-        "status": "ok",
-        "serpapi_configured": bool(SERPAPI_KEY),
-        "openai_configured": bool(OPENAI_API_KEY),
+    if(!res.ok){
+      throw new Error(`Backend ${res.status}: ${data.detail || rawText || 'Unknown error'}`);
     }
 
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def get_travel_class(cabin: str) -> int:
-    """
-    Google Flights travel_class values:
-
-    1 = Economy
-    2 = Premium Economy
-    3 = Business
-    4 = First
-    """
-
-    cabin = (cabin or "economy").lower()
-
-    mapping = {
-        "economy": 1,
-        "premium economy": 2,
-        "premium_economy": 2,
-        "premium": 2,
-        "business": 3,
-        "first": 4,
-        "first class": 4,
-    }
-
-    return mapping.get(cabin, 1)
-
-
-def normalize_flight(entry: dict) -> Optional[dict]:
-    """
-    Converts a SerpAPI Google Flights result into
-    the format expected by the SkyOpt frontend.
-    """
-
-    flights = entry.get("flights", [])
-
-    if not flights:
-        return None
-
-    first_leg = flights[0]
-    last_leg = flights[-1]
-
-    airline = first_leg.get("airline") or "Unknown"
-
-    return {
-        "source": "serp",
-
-        "price": entry.get("price", 0),
-
-        "airline": airline,
-
-        "logo": first_leg.get("airline_logo"),
-
-        "stops": max(len(flights) - 1, 0),
-
-        "duration": entry.get("total_duration", 0),
-
-        "dep_time": (
-            first_leg
-            .get("departure_airport", {})
-            .get("time")
-        ),
-
-        "arr_time": (
-            last_leg
-            .get("arrival_airport", {})
-            .get("time")
-        ),
-
-        "flight_code": first_leg.get(
-            "flight_number"
-        ),
-
-        "legs": flights,
-
-        "layovers": entry.get(
-            "layovers",
-            []
-        ),
-
-        "extensions": entry.get(
-            "extensions",
-            []
-        ),
-
-        "fare_name": entry.get(
-            "fare_name"
-        ),
-
-        "carbon_emissions": entry.get(
-            "carbon_emissions"
-        ),
-    }
-
-
-# ============================================================
-# FLIGHT SEARCH
-# ============================================================
-
-@app.post("/api/v1/flights/search")
-def search_flights(payload: FlightSearchRequest):
-
-    if not SERPAPI_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="SERPAPI_KEY is missing",
-        )
-
-    trip_type = payload.trip_type.lower()
-
-    # --------------------------------------------------------
-    # Validate
-    # --------------------------------------------------------
-
-    if trip_type not in {
-        "oneway",
-        "roundtrip",
-        "multi",
-    }:
-        raise HTTPException(
-            status_code=400,
-            detail="trip_type must be oneway, roundtrip, or multi",
-        )
-
-    if trip_type == "roundtrip" and not payload.return_date:
-        raise HTTPException(
-            status_code=400,
-            detail="return_date is required for roundtrip",
-        )
-
-    # --------------------------------------------------------
-    # Google Flights parameters
-    # --------------------------------------------------------
-
-    params = {
-        "engine": "google_flights",
-
-        "departure_id": payload.origin.upper(),
-        "arrival_id": payload.destination.upper(),
-
-        "outbound_date": payload.depart_date,
-
-        "currency": "USD",
-        "hl": "en",
-
-        "adults": max(payload.passengers, 1),
-
-        "travel_class": get_travel_class(
-            payload.cabin
-        ),
-    }
-
-    # --------------------------------------------------------
-    # Trip type
-    # --------------------------------------------------------
-
-    if trip_type == "roundtrip":
-
-        # Google Flights:
-        # type 1 = round trip
-
-        params["type"] = 1
-        params["return_date"] = payload.return_date
-
-    else:
-
-        # Google Flights:
-        # type 2 = one way
-
-        params["type"] = 2
-
-    # --------------------------------------------------------
-    # Search
-    # --------------------------------------------------------
-
-    try:
-
-        client = serpapi.Client(
-            api_key=SERPAPI_KEY
-        )
-
-        results = client.search(params)
-
-        if "error" in results:
-            raise HTTPException(
-                status_code=502,
-                detail=results["error"],
-            )
-
-        best = results.get(
-            "best_flights",
-            []
-        )
-
-        others = results.get(
-            "other_flights",
-            []
-        )
-
-        combined = best + others
-
-        normalized = []
-
-        for entry in combined:
-
-            flight = normalize_flight(entry)
-
-            if flight:
-                normalized.append(flight)
-
-        return {
-            "origin": payload.origin.upper(),
-            "destination": payload.destination.upper(),
-            "trip_type": trip_type,
-            "depart_date": payload.depart_date,
-            "return_date": payload.return_date,
-            "flights": normalized,
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Flight search error: {str(e)}",
-        )
-
-
-# ============================================================
-# SKYOPT AI SYSTEM PROMPT
-# ============================================================
-
-SKYOPT_INSTRUCTIONS = """
-You are SkyOpt IQ, an intelligent travel-search assistant.
-
-Your job is to understand what trip a traveler wants and
-progressively construct a structured trip state.
-
-You are NOT responsible for inventing flights, prices,
-airports, schedules, or availability.
-
-Actual flight data comes from SkyOpt's travel APIs.
-
-
-GENERAL BEHAVIOR
-
-1. Speak naturally and concisely.
-
-2. Ask only ONE important follow-up question at a time.
-
-3. Never ask for information already contained in the trip
-   state unless clarification is genuinely necessary.
-
-4. Update the state whenever the traveler gives new
-   information.
-
-5. Preserve useful information from the existing state.
-
-6. Do not reset fields unless the traveler explicitly changes
-   them.
-
-
-ORIGIN RULES
-
-Travelers are NOT expected to know airport codes.
-
-Never require the traveler to provide an airport code.
-
-Accept origins such as:
-
-"Keene, NH"
-"New York"
-"03431"
-"Boston"
-"USA"
-"I live near Chicago"
-
-If the traveler gives a sufficiently specific city or town,
-store it in origin_text.
-
-Example:
-
-"I live in Keene, NH"
-
-origin_text = "Keene, NH"
-
-Do NOT ask for ZIP code if the city/town is already specific
-enough for geocoding.
-
-If the traveler only provides something broad such as:
-
-"USA"
-"California"
-"the northeast"
-
-ask for their ZIP code or city/town.
-
-Another SkyOpt service will later convert the origin into
-coordinates and nearby commercial airports.
-
-
-DESTINATION RULES
-
-The destination does NOT have to be a specific airport or
-city.
-
-Understand destination discovery requests such as:
-
-"somewhere warm in Europe"
-"a cheap beach destination"
-"somewhere tropical"
-"somewhere in Asia"
-"somewhere warm for Christmas"
-"a romantic city in Europe"
-"a beach destination in the Caribbean"
-
-Use:
-
-destination_city
-destination_country
-destination_region
-destination_preferences
-
-appropriately.
-
-Example:
-
-"I want somewhere warm in Europe"
-
-destination_region = "Europe"
-
-destination_preferences = ["warm"]
-
-Do NOT invent the final destination.
-
-Another SkyOpt service will generate and evaluate candidate
-destinations.
-
-
-DATE RULES
-
-Understand explicit dates whenever possible.
-
-If the traveler gives:
-
-"December 23 to December 31"
-
-store the corresponding dates.
-
-Use YYYY-MM-DD.
-
-Use the most contextually reasonable upcoming year if the
-year is omitted.
-
-If the traveler only says:
-
-"Christmas"
-"spring break"
-"next summer"
-
-and exact dates are necessary, ask about their flexible date
-range.
-
-Do not pretend an ambiguous holiday phrase represents exact
-travel dates.
-
-
-BUDGET RULES
-
-Understand phrases such as:
-
-"$1300"
-"under $1,300"
-"my budget is 2k"
-"I don't want to spend more than 900 dollars"
-
-Store the numeric value in budget_usd.
-
-If it matters and is unclear whether the budget is per
-traveler or total, ask later.
-
-Do not repeatedly ask about budget.
-
-
-PASSENGERS
-
-If the traveler says:
-
-"my wife and I"
-
-passengers = 2
-
-If they say:
-
-"me and my two kids"
-
-passengers = 3
-
-If passenger count is unknown, it does not always need to
-block destination discovery.
-
-
-FLIGHT PREFERENCES
-
-Understand preferences such as:
-
-"nonstop only"
-
-max_stops = 0
-
-"maximum one stop"
-
-max_stops = 1
-
-"I have two checked bags"
-
-checked_bags = 2
-
-
-AIRPORT RADIUS
-
-If the traveler specifies how far they are willing to travel
-to an airport, store airport_radius_miles.
-
-Examples:
-
-"within 100 miles"
-
-airport_radius_miles = 100
-
-"I'll drive up to 3 hours"
-
-Do not convert driving hours into miles yourself.
-Ask for clarification later if necessary.
-
-
-SEARCH READINESS
-
-ready_to_search should be true when SkyOpt has enough
-information to begin destination discovery or flight search.
-
-Normally this requires:
-
-1. A usable origin location.
-
-AND
-
-2. Either:
-   - destination_city
-   - destination_country
-   - destination_region
-
-AND
-
-3. usable travel dates.
-
-Budget is useful but is not always mandatory.
-
-Airport radius is useful but is not always mandatory.
-
-Passenger count is useful but does not always need to block
-initial discovery.
-
-
-CRITICAL SAFETY / ACCURACY RULE
-
-Never claim that a flight exists.
-
-Never invent airfare.
-
-Never invent flight schedules.
-
-Never say that you "found" a flight unless flight-search
-results were actually provided to you.
-
-Your role in this endpoint is to understand the traveler's
-request and determine what information SkyOpt needs next.
-"""
-
-
-# ============================================================
-# STRUCTURED OUTPUT SCHEMA
-# ============================================================
-
-TRIP_SCHEMA = {
-    "type": "object",
-
-    "properties": {
-
-        "message": {
-            "type": "string"
-        },
-
-        "state": {
-            "type": "object",
-
-            "properties": {
-
-                "origin_text": {
-                    "type": ["string", "null"]
-                },
-
-                "origin_zip": {
-                    "type": ["string", "null"]
-                },
-
-                "destination_city": {
-                    "type": ["string", "null"]
-                },
-
-                "destination_country": {
-                    "type": ["string", "null"]
-                },
-
-                "destination_region": {
-                    "type": ["string", "null"]
-                },
-
-                "destination_preferences": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-
-                "date_start": {
-                    "type": ["string", "null"]
-                },
-
-                "date_end": {
-                    "type": ["string", "null"]
-                },
-
-                "budget_usd": {
-                    "type": ["number", "null"]
-                },
-
-                "budget_is_per_person": {
-                    "type": ["boolean", "null"]
-                },
-
-                "passengers": {
-                    "type": ["integer", "null"]
-                },
-
-                "cabin": {
-                    "type": ["string", "null"]
-                },
-
-                "max_stops": {
-                    "type": ["integer", "null"]
-                },
-
-                "checked_bags": {
-                    "type": ["integer", "null"]
-                },
-
-                "airport_radius_miles": {
-                    "type": ["integer", "null"]
-                },
-            },
-
-            "required": [
-                "origin_text",
-                "origin_zip",
-                "destination_city",
-                "destination_country",
-                "destination_region",
-                "destination_preferences",
-                "date_start",
-                "date_end",
-                "budget_usd",
-                "budget_is_per_person",
-                "passengers",
-                "cabin",
-                "max_stops",
-                "checked_bags",
-                "airport_radius_miles",
-            ],
-
-            "additionalProperties": False,
-        },
-
-        "ready_to_search": {
-            "type": "boolean"
-        },
-
-        "missing_fields": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-    },
-
-    "required": [
-        "message",
-        "state",
-        "ready_to_search",
-        "missing_fields",
-    ],
-
-    "additionalProperties": False,
+    FLIGHTS_DB = normalizeFlights(data.flights || []);
+    recalcScores();
+  }catch(err){
+    console.error('Search failed:',err);
+    FLIGHTS_DB = [];
+    updateStats([]);
+    updateInsight([]);
+    document.getElementById('flightResults').innerHTML =
+      `<div class="message-box" style="border-color:#fecaca;color:#b91c1c;"><strong>Backend error:</strong> ${err.message}<br><span style="font-size:12px;color:var(--text3);">Make sure FastAPI is running at ${BACKEND_URL}</span></div>`;
+  }finally{
+    btn.classList.remove('loading');
+    document.getElementById('loadingState').style.display = 'none';
+  }
+}
+
+function saveTL(){localStorage.setItem('skyopt_trips',JSON.stringify(savedTrips));}
+function saveTrip(id){
+  const f=FLIGHTS_DB.find(x=>x.id===id);if(!f)return;
+  const from=getIATA('from'),to=getIATA('to'),dep=document.getElementById('depdate').value;
+  if(!savedTrips.some(t=>t.airline===f.airline&&t.dep===f.dep&&t.price===f.price&&t.from===from)){
+    savedTrips.unshift({...f,from,to,depdate:dep,savedAt:new Date().toLocaleString()});
+    saveTL();showToast('✈ Trip saved!');
+  }
+  switchView('trips',document.querySelectorAll('.nav-link')[1]);
+}
+function removeTrip(i){savedTrips.splice(i,1);saveTL();renderTrips();renderAnalytics();}
+
+function renderTrips(){
+  const el=document.getElementById('tripsList');
+  if(!savedTrips.length){el.innerHTML=`<div class="trips-empty"><span class="icon">✈</span><strong>No saved trips yet.</strong><br>Search for flights and hit Save Trip.</div>`;return;}
+  el.innerHTML=savedTrips.map((t,i)=>`
+    <div class="flight-card" style="margin-bottom:12px;">
+      <div class="card-inner">
+        <div class="airline-info"><div class="airline-logo">${logoHtml(t)}</div>
+          <div><div class="airline-name">${t.airline}</div><div class="flight-code">${t.code}</div><span class="source-badge">Saved</span></div>
+        </div>
+        <div class="route-visual">
+          <div class="airport-block"><div class="airport-time">${t.dep}</div><div class="airport-code">${t.from||'ORG'}</div></div>
+          <div class="route-line"><div class="route-duration">${fmtDur(t.duration)}</div><div class="route-track"><span class="route-plane">✈</span></div>${stopLbl(t.stops)}</div>
+          <div class="airport-block"><div class="airport-time">${t.arr}</div><div class="airport-code">${t.to||'DST'}</div></div>
+        </div>
+        <div class="score-col"><div class="score-ring ${scCls(t.score||8)}">${t.score||'—'}</div><div style="font-size:9px;color:var(--text3);font-family:'Space Mono',monospace;">saved</div></div>
+        <div class="price-col"><div class="price-main">$${t.price}</div><div class="price-per">${t.savedAt}</div><button class="select-btn" onclick="removeTrip(${i})">Remove</button></div>
+      </div>
+    </div>`).join('');
+}
+
+function renderAnalytics(){
+  const trips=savedTrips;
+  const ps=trips.map(t=>+t.price).filter(p=>p>0),ds=trips.map(t=>+t.duration).filter(d=>d>0);
+  document.getElementById('anaSavedTrips').textContent=trips.length||'0';
+  document.getElementById('anaAvgPrice').textContent=ps.length?'$'+Math.round(ps.reduce((a,b)=>a+b,0)/ps.length):'—';
+  document.getElementById('anaCheapest').textContent=ps.length?'$'+Math.min(...ps):'—';
+  document.getElementById('anaAvgDuration').textContent=ds.length?fmtDur(Math.round(ds.reduce((a,b)=>a+b,0)/ds.length)):'—';
+  if(!trips.length){
+    document.getElementById('analyticsSummary').textContent='No analytics yet. Save some trips first.';
+    document.getElementById('analyticsTableWrap').innerHTML='';
+    ['priceChart','airlineChart','stopsChart'].forEach(id=>{const c=document.getElementById(id);if(c){const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);}});
+    return;
+  }
+  const ch=trips.reduce((a,b)=>+a.price<+b.price?a:b);
+  const fst=trips.reduce((a,b)=>+a.duration<+b.duration?a:b);
+  document.getElementById('analyticsSummary').innerHTML=`${trips.length} saved trip${trips.length>1?'s':''}. Cheapest: <strong>${ch.airline}</strong> at <strong>$${ch.price}</strong>. Fastest: <strong>${fst.airline}</strong> at <strong>${fmtDur(fst.duration)}</strong>.`;
+  document.getElementById('analyticsTableWrap').innerHTML=`<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border);">
+    <th style="padding:8px 6px;text-align:left;color:var(--text3);font-weight:500;">Airline</th>
+    <th style="padding:8px 6px;text-align:left;color:var(--text3);font-weight:500;">Route</th>
+    <th style="padding:8px 6px;text-align:right;color:var(--text3);font-weight:500;">Price</th>
+    <th style="padding:8px 6px;text-align:center;color:var(--text3);font-weight:500;">Stops</th>
+    <th style="padding:8px 6px;text-align:right;color:var(--text3);font-weight:500;">Duration</th>
+    </tr></thead><tbody>${trips.map(t=>`<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 6px;">${t.airline}</td>
+      <td style="padding:8px 6px;color:var(--text2);">${t.from||'?'}→${t.to||'?'}</td>
+      <td style="padding:8px 6px;text-align:right;font-family:'Space Mono',monospace;">$${t.price}</td>
+      <td style="padding:8px 6px;text-align:center;">${t.stops}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text2);">${fmtDur(t.duration)}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  const bins=[{l:'<$300',n:0},{l:'$300–599',n:0},{l:'$600–899',n:0},{l:'$900+',n:0}];
+  ps.forEach(p=>{if(p<300)bins[0].n++;else if(p<600)bins[1].n++;else if(p<900)bins[2].n++;else bins[3].n++;});
+  drawBar('priceChart',bins.map(b=>b.l),bins.map(b=>b.n));
+  const ac={};trips.forEach(t=>ac[t.airline]=(ac[t.airline]||0)+1);
+  const top=Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  drawBar('airlineChart',top.map(x=>x[0]),top.map(x=>x[1]));
+  const sc={n:0,one:0,m:0};trips.forEach(t=>{if(+t.stops===0)sc.n++;else if(+t.stops===1)sc.one++;else sc.m++;});
+  drawBar('stopsChart',['Nonstop','1 Stop','2+ Stops'],[sc.n,sc.one,sc.m]);
+}
+
+function drawBar(id,labels,values){
+  const canvas=document.getElementById(id);if(!canvas)return;
+  const dpr=window.devicePixelRatio||1;
+  const cw=canvas.parentElement.clientWidth-32,ch=180;
+  canvas.width=cw*dpr;canvas.height=ch*dpr;
+  canvas.style.width=cw+'px';canvas.style.height=ch+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cw,ch);
+  const pad=28,gap=10,maxV=Math.max(...values,1);
+  const bw=(cw-pad*2-gap*(values.length-1))/values.length;
+  ctx.font='11px DM Sans,sans-serif';ctx.textAlign='center';
+  values.forEach((v,i)=>{
+    const x=pad+i*(bw+gap),bh=(v/maxV)*(ch-pad*2-20),y=ch-pad-bh;
+    ctx.fillStyle='#dbeafe';ctx.beginPath();
+    if(ctx.roundRect){ctx.roundRect(x,y,bw,bh,3);}else{ctx.rect(x,y,bw,bh);}
+    ctx.fill();
+    const ah=bh*0.65;ctx.fillStyle='#1f6feb';ctx.beginPath();
+    if(ctx.roundRect){ctx.roundRect(x,y+bh-ah,bw,ah,3);}else{ctx.rect(x,y+bh-ah,bw,ah);}
+    ctx.fill();
+    ctx.fillStyle='#0f172a';ctx.fillText(v,x+bw/2,y-5);
+    ctx.fillStyle='#64748b';ctx.fillText(labels[i].length>9?labels[i].slice(0,8)+'…':labels[i],x+bw/2,ch-8);
+  });
+}
+window.addEventListener('resize',()=>{if(document.getElementById('view-analytics').style.display!=='none')renderAnalytics();});
+
+function openModal(id){
+  const f=FLIGHTS_DB.find(x=>x.id===id);if(!f)return;
+  document.getElementById('flightDetailTitle').textContent=`${f.airline} — $${f.price}`;
+  const layH=f.layovers.length
+    ?f.layovers.map((l,i)=>`<div class="detail-block"><div class="detail-block-title">Layover ${i+1}</div><div style="font-size:13px;color:var(--text2);">${l.name||'—'}${l.id?` (${l.id})`:''} · ${l.duration?fmtDur(l.duration):'—'}${l.overnight?' · Overnight':''}</div></div>`).join('')
+    :'<div class="detail-block"><div class="detail-block-title">Layovers</div><div style="font-size:13px;color:var(--text3);">Nonstop or no layover data.</div></div>';
+  const legH=f.legs.length
+    ?f.legs.map((lg,i)=>`<div class="detail-leg"><div class="detail-leg-header">Segment ${i+1}</div>
+      <div class="detail-grid">
+        <div><strong>Airline</strong> ${lg.airline||'—'}</div><div><strong>Flight #</strong> ${lg.flight_number||'—'}</div>
+        <div><strong>Aircraft</strong> ${lg.airplane||'—'}</div><div><strong>Class</strong> ${lg.travel_class||'—'}</div>
+        <div><strong>Duration</strong> ${fmtDur(lg.duration)}</div><div><strong>Legroom</strong> ${lg.legroom||'—'}</div>
+      </div>
+      <div class="detail-route">
+        <div class="detail-airport-box"><div class="detail-time">${fmtDT((lg.departure_airport||{}).time)}</div><div class="detail-airport">${(lg.departure_airport||{}).name||'—'}${(lg.departure_airport||{}).id?` (${lg.departure_airport.id})`:''}</div></div>
+        <div class="detail-arrow">→</div>
+        <div class="detail-airport-box"><div class="detail-time">${fmtDT((lg.arrival_airport||{}).time)}</div><div class="detail-airport">${(lg.arrival_airport||{}).name||'—'}${(lg.arrival_airport||{}).id?` (${lg.arrival_airport.id})`:''}</div></div>
+      </div>
+      ${lg.extensions?.length?`<div class="detail-note">${lg.extensions.join(' · ')}</div>`:''}</div>`).join('')
+    :'<div style="font-size:13px;color:var(--text3);">No segment details available.</div>';
+  document.getElementById('flightDetailBody').innerHTML=`
+    <div class="detail-summary">
+      <div class="detail-chip"><strong>Price</strong> $${f.price}</div>
+      <div class="detail-chip"><strong>Duration</strong> ${fmtDur(f.duration)}</div>
+      <div class="detail-chip"><strong>Stops</strong> ${f.stops}</div>
+      <div class="detail-chip"><strong>Departs</strong> ${fmtDT(f.depRaw)}</div>
+      <div class="detail-chip"><strong>Arrives</strong> ${fmtDT(f.arrRaw)}</div>
+      ${f.fareName?`<div class="detail-chip"><strong>Fare</strong> ${f.fareName}</div>`:''}
+    </div>
+    ${f.extensions?.length?`<div class="detail-block"><div class="detail-block-title">Fare Notes</div><div style="font-size:13px;color:var(--text2);">${f.extensions.join(' · ')}</div></div>`:''}
+    ${layH}
+    <div class="detail-block"><div class="detail-block-title">Segments</div>${legH}</div>`;
+  document.getElementById('flightDetailModal').style.display='block';
+}
+function closeModal(){document.getElementById('flightDetailModal').style.display='none';}
+
+function showToast(msg){
+  const t=document.getElementById('skyopt-toast');
+  t.textContent=msg;t.style.opacity='1';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',2500);
 }
 
 
-# ============================================================
-# AI CHAT
-# ============================================================
 
-@app.post(
-    "/api/v1/ai/chat",
-    response_model=AIChatResponse,
-)
-def ai_chat(payload: AIChatRequest):
+let AI_CONSTRAINTS={budget:Infinity,maxHours:Infinity,maxStops:99,bags:0,bagCost:40,ground:0,timeValue:0,avoidOvernight:false};
+let AI_STATE={
+  origin_text:null,origin_zip:null,destination_city:null,destination_country:null,destination_region:null,
+  destination_preferences:[],date_start:null,date_end:null,budget_usd:null,budget_is_per_person:null,
+  passengers:null,cabin:null,max_stops:null,checked_bags:null,airport_radius_miles:null
+};
+let AI_NEARBY_AIRPORTS=[];
+const AIRPORT_COORDS={
+ JFK:[40.6413,-73.7781],LGA:[40.7769,-73.8740],EWR:[40.6895,-74.1745],LAX:[33.9416,-118.4085],ORD:[41.9742,-87.9073],MDW:[41.7868,-87.7522],ATL:[33.6407,-84.4277],DFW:[32.8998,-97.0403],DEN:[39.8561,-104.6737],SFO:[37.6213,-122.3790],SEA:[47.4502,-122.3088],MIA:[25.7959,-80.2870],BOS:[42.3656,-71.0096],IAD:[38.9531,-77.4565],DCA:[38.8512,-77.0402],LAS:[36.0840,-115.1537],PHX:[33.4342,-112.0116],MSP:[44.8848,-93.2223],DTW:[42.2162,-83.3554],CLT:[35.2140,-80.9431],MCO:[28.4312,-81.3081],IAH:[29.9902,-95.3368],HOU:[29.6454,-95.2789],SAN:[32.7338,-117.1933],TPA:[27.9755,-82.5332],PDX:[45.5898,-122.5951],SLC:[40.7899,-111.9791],AUS:[30.1975,-97.6664],BNA:[36.1263,-86.6774],MCI:[39.2976,-94.7139],PHL:[39.8744,-75.2424],BWI:[39.1774,-76.6684],BDL:[41.9389,-72.6832],ALB:[42.7483,-73.8017],BUF:[42.9405,-78.7322],PIT:[40.4915,-80.2329],RDU:[35.8801,-78.7880],RIC:[37.5052,-77.3197],CLE:[41.4117,-81.8498],CMH:[39.9980,-82.8919],CVG:[39.0488,-84.6678],FLL:[26.0742,-80.1506],JAX:[30.4941,-81.6879],MSY:[29.9934,-90.2580],STL:[38.7487,-90.3700],CHS:[32.8986,-80.0405],MEM:[35.0424,-89.9767],SJC:[37.3639,-121.9289],OAK:[37.7126,-122.2197],SMF:[38.6954,-121.5908],SNA:[33.6757,-117.8682],SAT:[29.5337,-98.4698],ABQ:[35.0402,-106.6090],ANC:[61.1743,-149.9985],MHT:[42.9326,-71.4357]
+};
+function addAiMessage(text,who='bot'){
+  const log=document.getElementById('aiChatLog');const d=document.createElement('div');d.className='ai-msg '+who;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;
+}
+function useAiExample(btn){document.getElementById('aiPrompt').value=btn.textContent;document.getElementById('aiPrompt').focus();}
+function aiPromptKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runAiSearch();}}
+function haversineMiles(a,b){const R=3958.8,toRad=x=>x*Math.PI/180,dLat=toRad(b[0]-a[0]),dLon=toRad(b[1]-a[1]);const h=Math.sin(dLat/2)**2+Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+function nearbyAirports(lat,lon,radius){const origin=[lat,lon];return Object.entries(AIRPORT_COORDS).map(([iata,coords])=>{const a=AIRPORTS.find(x=>x.iata===iata);return a?{...a,miles:Math.round(haversineMiles(origin,coords))}:null;}).filter(Boolean).filter(a=>a.miles<=radius).sort((a,b)=>a.miles-b.miles).slice(0,6);}
+async function resolveZip(zip){const r=await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`);if(!r.ok)throw new Error('ZIP code not found');const d=await r.json(),p=d.places&&d.places[0];if(!p)throw new Error('ZIP code not found');return {city:p['place name'],state:p['state abbreviation'],lat:+p.latitude,lon:+p.longitude};}
+function destinationAirportFromState(){
+  const q=(AI_STATE.destination_city||'').toLowerCase();
+  if(!q)return null;
+  return AIRPORTS.find(a=>a.city.toLowerCase()===q||a.name.toLowerCase().includes(q)||(a.aliases||[]).some(x=>String(x).toLowerCase()===q))||null;
+}
+function updateAiConstraintNote(){
+  const parts=[];
+  if(AI_STATE.origin_text)parts.push(`Origin: ${AI_STATE.origin_text}`); else if(AI_STATE.origin_zip)parts.push(`ZIP: ${AI_STATE.origin_zip}`);
+  if(AI_STATE.destination_city)parts.push(`Destination: ${AI_STATE.destination_city}`); else if(AI_STATE.destination_region)parts.push(`Destination: ${[...(AI_STATE.destination_preferences||[]),AI_STATE.destination_region].join(' ')}`);
+  if(AI_STATE.date_start)parts.push(`Dates: ${AI_STATE.date_start}${AI_STATE.date_end?' – '+AI_STATE.date_end:''}`);
+  if(AI_STATE.budget_usd)parts.push(`Budget: $${AI_STATE.budget_usd}`);
+  document.getElementById('aiConstraintNote').textContent=parts.length?parts.join(' · '):'Tell SkyOpt IQ what kind of trip you want. It will ask only for missing details.';
+}
+async function callSkyOptAI(message){
+  const res=await fetch(`${BACKEND_URL}/api/v1/ai/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,state:AI_STATE})});
+  let data={};try{data=await res.json();}catch(_){ }
+  if(!res.ok)throw new Error(data.detail||`AI request failed (${res.status})`);
+  AI_STATE=data.state||AI_STATE;updateAiConstraintNote();return data;
+}
+async function tryConcreteFlightSearch(){
+  const dest=destinationAirportFromState();
+  if(!dest||!AI_STATE.date_start)return false;
+  let originAirport=null;
+  if(AI_STATE.origin_text){
+    const q=AI_STATE.origin_text.toLowerCase();originAirport=AIRPORTS.find(a=>q.includes(a.city.toLowerCase())||q.includes(a.iata.toLowerCase()));
+  }
+  if(originAirport){AI_NEARBY_AIRPORTS=[{...originAirport,miles:0}];}
+  else if(AI_STATE.origin_zip){
+    const loc=await resolveZip(AI_STATE.origin_zip);const radius=AI_STATE.airport_radius_miles||100;AI_NEARBY_AIRPORTS=nearbyAirports(loc.lat,loc.lon,radius);
+  }
+  if(!AI_NEARBY_AIRPORTS.length)return false;
+  selectApt('to',dest.iata);document.getElementById('depdate').value=AI_STATE.date_start;
+  const roundTrip=!!AI_STATE.date_end;document.getElementById('tripType').value=roundTrip?'roundtrip':'oneway';handleTripTypeChange();if(roundTrip)document.getElementById('retdate').value=AI_STATE.date_end;
+  const all=[];const btn=document.getElementById('aiSendBtn');btn.textContent='Comparing flights…';
+  for(const apt of AI_NEARBY_AIRPORTS.slice(0,4)){
+    const payload={trip_type:roundTrip?'roundtrip':'oneway',origin:apt.iata,destination:dest.iata,depart_date:AI_STATE.date_start,return_date:roundTrip?AI_STATE.date_end:null,second_depart_date:null,cabin:AI_STATE.cabin||document.getElementById('cabin').value,passengers:AI_STATE.passengers||Number(document.getElementById('pax').value),weight_price:Number(document.getElementById('wPrice').value)/100,weight_stops:Number(document.getElementById('wStops').value)/100,weight_duration:Number(document.getElementById('wDuration').value)/100};
+    try{const res=await fetch(`${BACKEND_URL}/api/v1/flights/search`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!res.ok)continue;const data=await res.json();normalizeFlights(data.flights||[]).forEach(f=>all.push({...f,originIata:apt.iata,originMiles:apt.miles}));}catch(e){console.warn('AI flight search failed',apt.iata,e);}
+  }
+  FLIGHTS_DB=all.map((f,i)=>({...f,id:i+1}));if(!FLIGHTS_DB.length){addAiMessage('I understood the trip, but the flight service did not return results for those dates. Try changing the dates or departure area.');return true;}
+  const ranked=calcScores(FLIGHTS_DB).sort((a,b)=>b.score-a.score);renderFlights(ranked);updateStats(ranked);updateInsight(ranked);const b=ranked[0];selectApt('from',b.originIata);document.getElementById('routeTitle').textContent=`${AI_STATE.origin_text||AI_STATE.origin_zip} → ${AI_STATE.destination_city}`;document.getElementById('resultsMetaText').textContent=`SkyOpt IQ compared ${AI_NEARBY_AIRPORTS.slice(0,4).length} departure airport${AI_NEARBY_AIRPORTS.length===1?'':'s'}`;
+  addAiMessage(`I searched the trip and ranked the returned options below. The current top-ranked result departs from ${b.originIata}: ${b.airline}, $${b.price}, ${fmtDur(b.duration)}, ${b.stops===0?'nonstop':b.stops+' stop'+(b.stops>1?'s':'')}.`);return true;
+}
+async function runAiSearch(){
+  const input=document.getElementById('aiPrompt'),btn=document.getElementById('aiSendBtn');const message=input.value.trim();if(!message)return;addAiMessage(message,'user');input.value='';btn.disabled=true;btn.textContent='Thinking…';
+  try{
+    const data=await callSkyOptAI(message);addAiMessage(data.message||'Got it.');
+    if(data.ready_to_search){
+      const searched=await tryConcreteFlightSearch();
+      if(!searched && AI_STATE.destination_region && !AI_STATE.destination_city){addAiMessage(`I understand the discovery request (${(AI_STATE.destination_preferences||[]).join(', ')} ${AI_STATE.destination_region}). Your AI endpoint is working. The next backend step is destination discovery so SkyOpt can turn that preference into real candidate cities before calling the flight API.`);}
+    }
+  }catch(err){console.error(err);addAiMessage(`I couldn't reach SkyOpt IQ: ${err.message}. Check that OPENAI_API_KEY is set on the backend and that /api/v1/ai/chat is deployed.`);}
+  finally{btn.disabled=false;btn.textContent='Send';}
+}
+renderTrips();
+renderAnalytics();
 
-    if not OPENAI_API_KEY or openai_client is None:
-
-        raise HTTPException(
-            status_code=500,
-            detail="OPENAI_API_KEY is missing",
-        )
-
-    message = payload.message.strip()
-
-    if not message:
-
-        raise HTTPException(
-            status_code=400,
-            detail="message cannot be empty",
-        )
-
-    current_state = payload.state.model_dump_json(
-        indent=2
-    )
-
-    user_input = f"""
-CURRENT TRIP STATE:
-
-{current_state}
-
-
-NEW TRAVELER MESSAGE:
-
-{message}
-
-
-Update the trip state using the new message.
-
-Keep information from CURRENT TRIP STATE unless the traveler
-explicitly changes it.
-
-Determine whether enough information exists to begin search.
-
-If information is missing, ask ONE useful follow-up question.
-"""
-
-    try:
-
-        response = openai_client.responses.create(
-
-            model=OPENAI_MODEL,
-
-            instructions=SKYOPT_INSTRUCTIONS,
-
-            input=user_input,
-
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "skyopt_trip_state",
-                    "strict": True,
-                    "schema": TRIP_SCHEMA,
-                }
-            },
-        )
-
-        if not response.output_text:
-
-            raise HTTPException(
-                status_code=502,
-                detail="OpenAI returned an empty response",
-            )
-
-        result = json.loads(
-            response.output_text
-        )
-
-        return AIChatResponse(
-            **result
-        )
-
-    except HTTPException:
-        raise
-
-    except json.JSONDecodeError as e:
-
-        raise HTTPException(
-            status_code=502,
-            detail=f"Invalid AI JSON response: {str(e)}",
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"SkyOpt AI error: {str(e)}",
-        )
+handleTripTypeChange();
+</script>
+</body>
+</html>
